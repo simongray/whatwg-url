@@ -1,7 +1,7 @@
 {:linters       {:missing-docstring {:level :warning}
                  :unused-binding    {:exclude-destructured-as true}}
  ;; the functions that defscan defines
- :hooks         {:macroexpand {dk.simongray.whatwg-url.chars/defscan hooks.defscan/defscan}}
+ :hooks         {:macroexpand {dk.simongray.whatwg-url.impl.chars/defscan hooks.defscan/defscan}}
  ;; test fixtures need no docstrings
  :ns-groups     [{:pattern "dk\\.simongray\\.whatwg-url.*-test" :name tests}]
  :config-in-ns  {tests {:linters {:missing-docstring {:level :off}}}}}

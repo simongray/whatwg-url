@@ -1,4 +1,4 @@
-(ns ^:no-doc dk.simongray.whatwg-url.unicode
+(ns ^:no-doc dk.simongray.whatwg-url.impl.unicode
   "The properties of Unicode 18.0.0 that IDNA needs: the IDNA mapping
   table of UTS #46, the bidi classes, the joining types, the marks and the
   viramas, and the platform's NFC.
@@ -15,10 +15,10 @@
   TODO: carry the NFC of Unicode 18.0.0 instead, if domains with such code
   points turn up, e.g. with a combining mark of a new script. Then no
   platform would refuse them."
-  #?(:cljs (:require-macros [dk.simongray.whatwg-url.unicode :refer [table-text]]))
+  #?(:cljs (:require-macros [dk.simongray.whatwg-url.impl.unicode :refer [table-text]]))
   (:require [clojure.string :as str]
             #?(:clj [clojure.java.io :as io])
-            [dk.simongray.whatwg-url.chars :as chars])
+            [dk.simongray.whatwg-url.impl.chars :as chars])
   #?(:clj (:import [java.text Normalizer Normalizer$Form])))
 
 #?(:clj

@@ -1,10 +1,10 @@
-(ns ^:no-doc dk.simongray.whatwg-url.chars
+(ns ^:no-doc dk.simongray.whatwg-url.impl.chars
   "Code points, the classes of ASCII that the URL Standard names, and the
   bytes of UTF-8, the same way on both platforms.
 
   The UTF-8 decoder is that of the Encoding Standard, which replaces each
   invalid sequence with U+FFFD as browsers do."
-  #?(:cljs (:require-macros [dk.simongray.whatwg-url.chars :refer [defscan]]))
+  #?(:cljs (:require-macros [dk.simongray.whatwg-url.impl.chars :refer [defscan]]))
   #?(:clj (:import [java.util Locale])))
 
 ;; for a test that no surrogate passes, e.g. one of ASCII, a code unit at a

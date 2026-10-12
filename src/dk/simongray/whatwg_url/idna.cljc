@@ -7,9 +7,9 @@
   platform. A domain is an error rather than a guess when it has a new
   code point that NFC doesn't leave alone and the platform doesn't know."
   (:require [clojure.string :as str]
-            [dk.simongray.whatwg-url.chars :as chars]
-            [dk.simongray.whatwg-url.punycode :as punycode]
-            [dk.simongray.whatwg-url.unicode :as unicode]))
+            [dk.simongray.whatwg-url.impl.chars :as chars]
+            [dk.simongray.whatwg-url.impl.unicode :as unicode]
+            [dk.simongray.whatwg-url.punycode :as punycode]))
 
 (def default-options
   "The options that the URL Standard uses for the domain of a URL, both in

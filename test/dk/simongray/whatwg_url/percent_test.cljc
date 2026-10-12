@@ -3,7 +3,7 @@
   in section 1.3 of the URL Standard, its examples of encoding and
   decoding, and the UTF-8 decoder of the Encoding Standard."
   (:require [clojure.test :refer [deftest is testing]]
-            [dk.simongray.whatwg-url.chars :as chars]
+            [dk.simongray.whatwg-url.impl.chars :as chars]
             [dk.simongray.whatwg-url.percent :as percent]))
 
 (defn codes

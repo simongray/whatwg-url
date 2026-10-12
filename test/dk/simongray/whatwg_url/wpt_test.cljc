@@ -8,9 +8,9 @@
   skipped, since IDNA refuses a host with one."
   (:require [clojure.test :refer [deftest is testing]]
             [dk.simongray.whatwg-url :as url]
+            [dk.simongray.whatwg-url.impl.unicode :as unicode]
             [dk.simongray.whatwg-url.params :as params]
-            [dk.simongray.whatwg-url.test-data :as test-data]
-            [dk.simongray.whatwg-url.unicode :as unicode]))
+            [dk.simongray.whatwg-url.test-data :as test-data]))
 
 (def attributes
   "The getter of each attribute of the URL class."

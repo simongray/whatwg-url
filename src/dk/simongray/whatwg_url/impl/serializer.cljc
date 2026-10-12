@@ -1,9 +1,9 @@
-(ns ^:no-doc dk.simongray.whatwg-url.serializer
+(ns ^:no-doc dk.simongray.whatwg-url.impl.serializer
   "The URL serializer of the URL Standard, section 4.5, which writes a URL
   map as text. Its normal? tells whether the text of a URL is already
   written that way."
   (:require [clojure.string :as str]
-            [dk.simongray.whatwg-url.chars :as chars]
+            [dk.simongray.whatwg-url.impl.chars :as chars]
             [dk.simongray.whatwg-url.hosts :as hosts]))
 
 ;; URL Standard, section 4.5, the URL path serializer

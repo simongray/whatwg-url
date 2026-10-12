@@ -9,7 +9,7 @@
   (:q as q) and any other value as its text."
   (:refer-clojure :exclude [get set sort])
   (:require [clojure.string :as str]
-            [dk.simongray.whatwg-url.chars :as chars]
+            [dk.simongray.whatwg-url.impl.chars :as chars]
             [dk.simongray.whatwg-url.percent :as percent]))
 
 (defn- text

@@ -281,13 +281,13 @@ Unicode Character Database and the Public Suffix List into `dev-resources/`
 these files the conformance tests have nothing to check.
 
 The public namespaces are the root, `params`, `hosts`, `percent`, `idna`
-and `punycode`. The others are internal:
+and `punycode`. The internal ones are under `impl`:
 
-- `parser`, the state machine of the parser
-- `serializer`, which writes a URL as text
-- `setters`, the setters of the URL class
-- `unicode`, which reads the tables
-- `chars`, the code points and UTF-8
+- `impl.parser`, the state machine of the parser
+- `impl.serializer`, which writes a URL as text
+- `impl.setters`, the setters of the URL class
+- `impl.unicode`, which reads the tables
+- `impl.chars`, the code points and UTF-8
 
 License
 -------

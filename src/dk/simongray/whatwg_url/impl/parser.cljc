@@ -1,4 +1,4 @@
-(ns ^:no-doc dk.simongray.whatwg-url.parser
+(ns ^:no-doc dk.simongray.whatwg-url.impl.parser
   "The basic URL parser of the URL Standard, section 4.4, as a state
   machine whose states each read a run of the input rather than a code
   point at a time.
@@ -23,7 +23,7 @@
   TODO: the encodings other than UTF-8 that HTML passes to the parser for
   the query of a document in a legacy encoding."
   (:require [clojure.string :as str]
-            [dk.simongray.whatwg-url.chars :as chars]
+            [dk.simongray.whatwg-url.impl.chars :as chars]
             [dk.simongray.whatwg-url.hosts :as hosts]
             [dk.simongray.whatwg-url.percent :as percent]))
 

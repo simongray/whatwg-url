@@ -1,11 +1,11 @@
-(ns ^:no-doc dk.simongray.whatwg-url.setters
+(ns ^:no-doc dk.simongray.whatwg-url.impl.setters
   "The setters of the URL class of the URL Standard, section 6.1, which
   change a URL map as the basic URL parser does from a state of its own,
   e.g. the hostname state for the hostname setter."
   (:require [clojure.string :as str]
-            [dk.simongray.whatwg-url.chars :as chars]
+            [dk.simongray.whatwg-url.impl.chars :as chars]
+            [dk.simongray.whatwg-url.impl.parser :as parser]
             [dk.simongray.whatwg-url.params :as params]
-            [dk.simongray.whatwg-url.parser :as parser]
             [dk.simongray.whatwg-url.percent :as percent]))
 
 (defn- with-parse

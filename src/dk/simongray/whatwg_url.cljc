@@ -22,10 +22,10 @@
   class's setters do, use with and update."
   (:refer-clojure :exclude [hash resolve update])
   (:require [clojure.string :as str]
-            [dk.simongray.whatwg-url.params :as params]
-            [dk.simongray.whatwg-url.parser :as parser]
-            [dk.simongray.whatwg-url.serializer :as serializer]
-            [dk.simongray.whatwg-url.setters :as setters]))
+            [dk.simongray.whatwg-url.impl.parser :as parser]
+            [dk.simongray.whatwg-url.impl.serializer :as serializer]
+            [dk.simongray.whatwg-url.impl.setters :as setters]
+            [dk.simongray.whatwg-url.params :as params]))
 
 ;; URL Standard, section 6.1, the API URL parser
 (defn parse

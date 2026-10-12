@@ -9,7 +9,7 @@
   TODO: the encodings other than UTF-8 that HTML passes to the parser for
   the query of a document in a legacy encoding."
   (:require [clojure.string :as str]
-            [dk.simongray.whatwg-url.chars :as chars]))
+            [dk.simongray.whatwg-url.impl.chars :as chars]))
 
 (defn- encode-set
   "The percent-encode set of the C0 controls, the code points above U+007E

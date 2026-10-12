@@ -10,8 +10,8 @@
   (:require [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]
             [dk.simongray.whatwg-url.idna :as idna]
-            [dk.simongray.whatwg-url.test-data :as test-data]
-            [dk.simongray.whatwg-url.unicode :as unicode]))
+            [dk.simongray.whatwg-url.impl.unicode :as unicode]
+            [dk.simongray.whatwg-url.test-data :as test-data]))
 
 (def strict
   "The flags of UTS #46 that IdnaTestV2.txt is made for."

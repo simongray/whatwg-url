@@ -7,7 +7,7 @@
   errors as keywords. Pass them a vector to add the errors to, or nil to
   skip them."
   (:require [clojure.string :as str]
-            [dk.simongray.whatwg-url.chars :as chars]
+            [dk.simongray.whatwg-url.impl.chars :as chars]
             [dk.simongray.whatwg-url.idna :as idna]
             [dk.simongray.whatwg-url.percent :as percent]))
 

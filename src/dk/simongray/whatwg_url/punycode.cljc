@@ -3,7 +3,7 @@
   ASCII, e.g. the xn--fa-hia of xn--fa-hia.de for faß.de.
 
   Like most implementations, it limits its numbers to 31 bits."
-  (:require [dk.simongray.whatwg-url.chars :as chars]))
+  (:require [dk.simongray.whatwg-url.impl.chars :as chars]))
 
 ;; RFC 3492, section 5, as constants, which the compiler inlines as
 ;; primitive numbers
