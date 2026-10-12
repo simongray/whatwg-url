@@ -1,8 +1,8 @@
 (ns dk.simongray.whatwg-url.punycode
-  "Punycode, the encoding of Unicode labels of domain names in ASCII, by
-  RFC 3492, as in the xn--fa-hia of xn--fa-hia.de, which is faß.de.
+  "Punycode by RFC 3492, which writes a Unicode label of a domain name in
+  ASCII, e.g. the xn--fa-hia of xn--fa-hia.de for faß.de.
 
-  The numbers are limited to 31 bits, as most implementations do."
+  Like most implementations, it limits its numbers to 31 bits."
   (:require [dk.simongray.whatwg-url.chars :as chars]))
 
 ;; RFC 3492, section 5, as constants, which the compiler inlines as

@@ -6,11 +6,11 @@
   The tables in resources are made by dev/dk/simongray/whatwg_url/tables.clj
   from the Unicode Character Database, and are read on first use.
 
-  The platform normalizes to NFC, by the version of Unicode it has. NFC
-  doesn't change for the code points a version has, and it leaves most
-  new ones alone, e.g. a new emoji, so it's the NFC of Unicode 18.0.0
-  unless the text has a code point that the platform doesn't have and NFC
-  doesn't leave alone, which known? tells.
+  The platform normalizes to NFC by the version of Unicode it has. That's
+  the NFC of Unicode 18.0.0 too, since NFC never changes for the code
+  points that a version has and leaves most new ones alone (e.g. a new
+  emoji). The exception is a code point that the platform lacks and NFC
+  doesn't leave alone, which known? looks for.
 
   TODO: carry the NFC of Unicode 18.0.0 instead, if domains with such code
   points turn up, e.g. with a combining mark of a new script. Then no
@@ -34,15 +34,15 @@
          `(slurp (io/resource ~path))))))
 
 (defn- base-36
-  "The number that the text `s` writes in base 36."
+  "The number in the text `s`, read in base 36."
   ^long [s]
   #?(:clj (Long/parseLong s 36) :cljs (js/parseInt s 36)))
 
 ;; arrays rather than vectors, so that a lookup compares primitive numbers
 (defn read-table
   "The runs of the `text` of a table, as an array of the first code points,
-  an array of the last code points and an array of what `f` gives for the
-  value of each run."
+  an array of the last code points and an array of what `f` returns for
+  the value of each run."
   [text f]
   (let [lines  (vec (rest (str/split-lines text)))
         n      (count lines)
@@ -61,9 +61,9 @@
         [firsts lasts values]))))
 
 (defn lookup
-  "The value of the code point `c` in the `table` that read-table gives, or
-  nil when no run has it."
-  [[^longs firsts ^longs lasts ^objects values] ^long c]
+  "The value of the code point `c` in the `table` that read-table returns,
+  or nil when no run has it."
+  [[^longs firsts ^longs lasts ^objects values :as table] ^long c]
   (loop [lo 0 hi (dec (alength firsts))]
     (when (<= lo hi)
       (let [mid (quot (+ lo hi) 2)]
@@ -174,10 +174,10 @@
      :cljs (not (.test unassigned (js/String.fromCodePoint c)))))
 
 (defn known?
-  "Whether the platform's NFC gives the NFC of Unicode 18.0.0 for the text
-  `s`: whether its Unicode has each code point that isn't inert, leaving
-  out those that the IDNA table disallows, which make a domain fail
-  anyway."
+  "Whether the platform's NFC of the text `s` is that of Unicode 18.0.0,
+  i.e. whether the platform has each code point of `s` that isn't inert.
+  Code points that the IDNA table disallows don't count, since they make a
+  domain fail anyway."
   [s]
   (or #?(:cljs (not (.test unassigned s)))
       (let [n (chars/length s)]

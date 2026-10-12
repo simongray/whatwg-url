@@ -11,10 +11,10 @@
 ;; what a code point at a time would
 #?(:clj
    (defmacro defscan
-     "Define the private function `name` of the `params`, a text, an index
-     and any others, that gives the index of the first code unit `x` of
-     the text from the index for which the expression `test` holds, or the
-     end of the text.
+     "Define the private function `name`, documented by `doc`, of a text
+     `s`, an index `i` and any `more` params. It returns the index of the
+     first code unit `x` of `s` from `i` for which the expression `test`
+     holds, or the end of `s`.
 
      The test is inlined in a loop that returns a primitive number, so
      that no code unit is boxed and no closure is made."

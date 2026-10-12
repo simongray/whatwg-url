@@ -1,11 +1,11 @@
 (ns dk.simongray.whatwg-url.hosts
-  "Hosts: domains, IPv4 and IPv6 addresses, opaque hosts and the empty
-  host, by the URL Standard, section 3.
+  "The hosts of URLs by the URL Standard, section 3: domains, IPv4 and
+  IPv6 addresses, opaque hosts and the empty host.
 
-  A host is the text of its serialization, e.g. \"127.0.0.1\" or
-  \"[::1]\", as parse gives it. The functions that end in -report also give
-  the validation errors, as keywords: give them a vector to add the errors
-  to, or nil to leave them out."
+  A host is the text that parse returns for it, e.g. \"127.0.0.1\" or
+  \"[::1]\". The functions that end in -report also return the validation
+  errors as keywords. Pass them a vector to add the errors to, or nil to
+  skip them."
   (:require [clojure.string :as str]
             [dk.simongray.whatwg-url.chars :as chars]
             [dk.simongray.whatwg-url.idna :as idna]
@@ -56,9 +56,10 @@
 
 ;; URL Standard, section 3.5, the IPv4 number parser
 (defn ^:no-doc ipv4-number
-  "The number that the part `s` of an IPv4 address writes, in decimal,
-  hexadecimal after 0x or octal after 0, and whether it isn't decimal, as a
-  pair, or nil when it doesn't read. A number above 2^32 is 2^32."
+  "The number in the part `s` of an IPv4 address and whether it isn't
+  decimal, as a pair, or nil when `s` isn't a number. The part can be
+  decimal, hexadecimal after 0x or octal after 0. A number above 2^32
+  counts as 2^32."
   [s]
   (let [n      (chars/length s)
         zeroed (and (<= 2 n) (== 0x30 (chars/code-at s 0)))
@@ -76,9 +77,9 @@
           [v (not= 10 radix)])))))
 
 (defn ends-in-a-number?
-  "Whether the last label of the ASCII domain `s`, not counting an empty
-  one at its end, is a number, so that it's read as an IPv4 address, e.g.
-  example.1 or example.0x."
+  "Whether the last label of the ASCII domain `s` is a number, e.g.
+  example.1 or example.0x, which makes the host an IPv4 address. An empty
+  label at the end doesn't count."
   [s]
   (let [s    (cond-> s (str/ends-with? s ".") (subs 0 (dec (count s))))
         last (subs s (inc (long (or (str/last-index-of s ".") -1))))]
@@ -95,9 +96,9 @@
 
 ;; URL Standard, section 3.5, the IPv4 parser
 (defn ipv4-report
-  "The IPv4 address that the ASCII text `s` writes as a number, and
-  `errors` with its validation errors added, as a pair. The address is nil
-  when it doesn't read."
+  "The IPv4 address in the ASCII text `s` as a number, and `errors` with
+  its validation errors added, as a pair. The address is nil when `s`
+  isn't one."
   [s errors]
   (let [parts         (str/split s #"\." -1)
         trailing-dot? (= "" (peek parts))
@@ -125,9 +126,8 @@
            errors])))))
 
 (defn ipv4
-  "The IPv4 address that the ASCII text `s` writes, as a number, or nil.
-  Each part can be written in decimal, octal or hexadecimal, and there can
-  be fewer than four.
+  "The IPv4 address in the ASCII text `s` as a number, or nil. Its parts
+  can be decimal, octal or hexadecimal, and there may be fewer than four.
 
       (ipv4 \"0x7f.1\")
       ;; => 2130706433"
@@ -192,9 +192,9 @@
 
 ;; URL Standard, section 3.5, the IPv6 parser
 (defn ipv6-report
-  "The IPv6 address that the text `s` writes without its brackets, as its
-  eight 16-bit pieces, and `errors` with its validation errors added, as a
-  pair. The address is nil when it doesn't read."
+  "The IPv6 address in the text `s` (without brackets) as its eight 16-bit
+  pieces, and `errors` with its validation errors added, as a pair. The
+  address is nil when `s` isn't one."
   [s errors]
   (let [n (count s)
         c #(if (< % n) (chars/code-at s %) -1)]
@@ -261,8 +261,8 @@
                      errors))))))))
 
 (defn ipv6
-  "The eight 16-bit pieces of the IPv6 address that the text `s` writes
-  without its brackets, or nil.
+  "The eight 16-bit pieces of the IPv6 address in the text `s` (without
+  brackets), or nil.
 
       (ipv6 \"::1\")
       ;; => [0 0 0 0 0 0 0 1]"
@@ -307,8 +307,8 @@
        (not (percent/url-units? s 0 (count s))) (with-error :invalid-url-unit))]))
 
 (def strict-options
-  "The flags of UTS #46 that the URL Standard's domain parser gives
-  Unicode ToASCII when it's strict."
+  "The options of idna/to-ascii that the URL Standard's domain parser uses
+  when it's strict."
   (assoc idna/default-options
          :check-hyphens?        true
          :use-std3-ascii-rules? true
@@ -316,9 +316,9 @@
 
 ;; URL Standard, section 3.3, the domain parser
 (defn domain-report
-  "The ASCII domain of the Unicode `domain`, by IDNA, and `errors` with its
-  validation errors added, as a pair. The domain is nil when it doesn't
-  convert, and when `strict?`, it must also be one that DNS allows."
+  "The Unicode `domain` in ASCII by IDNA, and `errors` with its validation
+  errors added, as a pair. The domain is nil when it doesn't convert. When
+  `strict?`, it must also be a domain that DNS allows."
   [domain strict? errors]
   (let [strict-result (when (or strict? errors) (idna/to-ascii domain strict-options))
         errors        (cond-> errors (nil? strict-result) (with-error :domain-to-ascii))
@@ -332,11 +332,11 @@
      errors]))
 
 (defn domain->ascii
-  "The ASCII domain of the Unicode `domain` by the domain parser of the URL
-  Standard, or nil, with `opts`:
+  "The Unicode `domain` in ASCII by the domain parser of the URL Standard,
+  or nil when it doesn't convert, with `opts`:
 
-  - :strict?, true to also allow only domains that DNS allows, e.g. with
-    no _ and no label longer than 63
+  - :strict?, true to only allow the domains that DNS allows, e.g. with no
+    _ and no label longer than 63
 
       (domain->ascii \"Bücher.example\")
       ;; => \"xn--bcher-kva.example\""
@@ -401,11 +401,11 @@
         [ascii errors]))))
 
 (defn parse
-  "The host of the text `s` as the URL Standard parses the host of a URL,
-  as its serialization, or nil when it doesn't parse. With `opts`:
+  "The host in the text `s`, parsed as the host of a URL and returned as
+  text, or nil when it doesn't parse. With `opts`:
 
   - :opaque?, true for the host of a URL whose scheme isn't special, which
-    is kept as it is, percent-encoded
+    is only percent-encoded
 
       (parse \"EXAMPLE.com\")      ;; => \"example.com\"
       (parse \"0x7f.1\")           ;; => \"127.0.0.1\"
@@ -417,10 +417,10 @@
    (first (parse-report s (boolean opaque?) nil))))
 
 (defn suffix-rules
-  "The rules of the Public Suffix List in its text `s`, e.g. of
-  public_suffix_list.dat from https://publicsuffix.org/list/, for
-  public-suffix and registrable-domain. The rules are converted to ASCII,
-  as a map of the :rules and the :exceptions, without their !."
+  "The rules of the Public Suffix List in its text `s` (e.g. that of
+  public_suffix_list.dat from https://publicsuffix.org/list/), for
+  public-suffix and registrable-domain. They're a map of the :rules and the
+  :exceptions (without their !), all in ASCII."
   [s]
   (reduce (fn [rules line]
             (let [rule (first (str/split (str/trim line) #"\s+"))]

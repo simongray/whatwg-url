@@ -6,8 +6,8 @@
   function too, e.g. (some-fn percent/path-set #{0x3B}). Every set of the
   standard holds the code points above U+007E.
 
-  TODO: the encodings other than UTF-8 that HTML gives the parser for the
-  query of a document in a legacy encoding."
+  TODO: the encodings other than UTF-8 that HTML passes to the parser for
+  the query of a document in a legacy encoding."
   (:require [clojure.string :as str]
             [dk.simongray.whatwg-url.chars :as chars]))
 
@@ -49,14 +49,14 @@
   (encode-set " \"#<>?^`{}/:;=@[\\]|"))
 
 (def component-set
-  "The component percent-encode set, which gives what JavaScript's
-  encodeURIComponent gives."
+  "The component percent-encode set, which encodes what JavaScript's
+  encodeURIComponent encodes."
   (encode-set " \"#<>?^`{}/:;=@[\\]|$%&+,"))
 
 (def form-urlencoded-set
   "The application/x-www-form-urlencoded percent-encode set, which leaves
   only the ASCII letters and digits and * - . _ as they are. Encoding by
-  it makes a space a +."
+  it turns a space into a +."
   (encode-set " \"#<>?^`{}/:;=@[\\]|$%&+,!'()~"))
 
 (def ^:no-doc escapes
@@ -97,13 +97,13 @@
         (str b)))))
 
 (defn encode
-  "The text `s` with each code point of the percent-encode `set`
-  percent-encoded as UTF-8, by component-set when no set is given.
+  "The text `s` with each code point in the percent-encode `set`
+  percent-encoded as UTF-8. The set is component-set unless given.
 
       (encode \"Say what‽\")
       ;; => \"Say%20what%E2%80%BD\"
 
-  By form-urlencoded-set a space becomes a +, as in the body of a form."
+  With form-urlencoded-set a space becomes a +, as in the body of a form."
   ([s]
    (encode s component-set))
   ([s set]

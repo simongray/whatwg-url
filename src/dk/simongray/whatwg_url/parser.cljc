@@ -9,8 +9,8 @@
   :path is a vector of segments, or a string for an opaque path, e.g. that
   of mailto:me@example.com.
 
-  Each state is a function of the parse, which gives the parse of the
-  next state. The parse is a record of:
+  Each state is a function from the parse to the parse of the next state.
+  The parse is a record of:
 
   - :input, the text, and :i, the pointer into it
   - :url, the URL so far, and :base, the URL to resolve against
@@ -20,8 +20,8 @@
   - :state, the state to run next, or :done or :failure
   - :buffer, the start of the path that the file host state read
 
-  TODO: the encodings other than UTF-8 that HTML gives the parser for the
-  query of a document in a legacy encoding."
+  TODO: the encodings other than UTF-8 that HTML passes to the parser for
+  the query of a document in a legacy encoding."
   (:require [clojure.string :as str]
             [dk.simongray.whatwg-url.chars :as chars]
             [dk.simongray.whatwg-url.hosts :as hosts]
@@ -736,8 +736,8 @@
         (recur ((states (:state parse)) parse))))))
 
 (defn parse
-  "The URL that the text `s` writes, resolved against the URL map `base`,
-  or nil when it doesn't parse."
+  "The URL in the text `s`, resolved against the URL map `base`, or nil
+  when `s` doesn't parse."
   [s base]
   (let [{:keys [state url]} (run (str s) {:base base})]
     (when (= :done state)

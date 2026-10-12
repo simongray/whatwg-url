@@ -1,7 +1,7 @@
 (ns ^:no-doc dk.simongray.whatwg-url.serializer
   "The URL serializer of the URL Standard, section 4.5, which writes a URL
-  map as text, and normal?, which tells the text of a URL that it would
-  write as it is."
+  map as text. Its normal? tells whether the text of a URL is already
+  written that way."
   (:require [clojure.string :as str]
             [dk.simongray.whatwg-url.chars :as chars]
             [dk.simongray.whatwg-url.hosts :as hosts]))
@@ -60,7 +60,7 @@
 ;; over them tells
 (defn normal?
   "Whether the text `s` is an http or https URL that the parser and the
-  serializer give back as it is: with a host of lower-case letters,
+  serializer would return unchanged: with a host of lower-case letters,
   digits, dots and hyphens that doesn't end in a number, a path, and no
   port or credentials."
   [s]

@@ -1,25 +1,25 @@
 (ns dk.simongray.whatwg-url
-  "URLs as the URL Standard has browsers read, resolve, write and compare
-  them, as plain maps.
+  "Parse, resolve, write and compare URLs the way browsers do, by the URL
+  Standard.
 
-  A URL is a map of the parts it has:
+  A URL is a plain map of the parts it has:
 
   - :scheme, in lower case, e.g. \"https\"
   - :username and :password, percent-encoded, when they aren't empty
-  - :host, as its text, e.g. \"example.com\", \"127.0.0.1\" or \"[::1]\",
-    which can be empty, e.g. in file:///etc/hosts
-  - :port, a number, when it isn't the default of the scheme
-  - :path, a vector of segments, or a string for an opaque path, e.g. that
+  - :host, as text, e.g. \"example.com\", \"127.0.0.1\" or \"[::1]\" (it
+    can be empty, as in file:///etc/hosts)
+  - :port, a number, unless it's the default of the scheme
+  - :path, a vector of segments, or a string for an opaque path like that
     of mailto:me@example.com
-  - :query and :fragment, without their ? and #, which can be empty
+  - :query and :fragment, without their ? and # (both can be empty)
 
-  The functions that take a URL take a map, or its text, e.g. a string or
-  a java.net.URI, which they parse as an absolute URL first. They give nil
-  for text that doesn't parse.
+  Every function that takes a URL also takes its text (e.g. a string or a
+  java.net.URI) and parses it as an absolute URL first. For text that
+  doesn't parse, it returns nil.
 
-  The functions that are named after an attribute of the URL class of the
-  standard, e.g. hostname and pathname, give its value, and with and update
-  set them as its setters do."
+  The functions named after the attributes of JavaScript's URL class (e.g.
+  hostname and pathname) return their values. To set them the way that
+  class's setters do, use with and update."
   (:refer-clojure :exclude [hash resolve update])
   (:require [clojure.string :as str]
             [dk.simongray.whatwg-url.params :as params]
@@ -29,8 +29,8 @@
 
 ;; URL Standard, section 6.1, the API URL parser
 (defn parse
-  "The URL that the text `s` writes, resolved against the URL `base` when
-  given, or nil when it doesn't parse. The base is a map or text.
+  "The URL in the text `s`, resolved against the URL `base` when given, or
+  nil when `s` doesn't parse. The base is a map or text.
 
       (parse \"../c?q#f\" \"https://EXAMPLE.com/a/b\")
       ;; => {:scheme \"https\" :host \"example.com\" :path [\"c\"]
@@ -66,9 +66,9 @@
      (serializer/serialize (->url url) fragment?))))
 
 (defn resolve
-  "The text of the URL `s` resolved against the URL `base`, as a browser
-  resolves the link of a page against the page's URL, or nil when it
-  doesn't parse. With a nil base, only an absolute URL parses.
+  "The text of the URL `s` resolved against the URL `base`, or nil when it
+  doesn't parse. This is how a browser resolves a link against the URL of
+  its page. With a nil base, only an absolute URL parses.
 
       (resolve \"https://example.com/blog/post\" \"../about\")
       ;; => \"https://example.com/about\"
@@ -84,8 +84,8 @@
       :else                        (some-> (parse s base) (serializer/serialize true)))))
 
 (defn resolver
-  "A function of a URL that resolves it against the URL `base` as resolve
-  does, with the base parsed only once, e.g. for the links of a page.
+  "A function that resolves a URL against the URL `base` as resolve does,
+  but parses the base only once, e.g. for the links of a page.
 
       (map (resolver \"https://example.com/blog/post\") [\"a\" \"/b\"])
       ;; => (\"https://example.com/blog/a\" \"https://example.com/b\")"
@@ -135,8 +135,7 @@
   (some-> (->url url) (:port "") str))
 
 (defn pathname
-  "The path of the `url` as text, e.g. /a/b, as the pathname of the URL
-  class gives it."
+  "The path of the `url` as text, e.g. /a/b."
   [url]
   (when-let [url (->url url)]
     (serializer/serialize-path (:path url))))
@@ -156,8 +155,8 @@
     (if (seq fragment) (str "#" fragment) "")))
 
 (defn search-params
-  "The name-value pairs of the query of the `url`, as the functions of
-  dk.simongray.whatwg-url.params take them."
+  "The name-value pairs of the query of the `url`, as the params namespace
+  takes them."
   [url]
   (some-> (->url url) (:query "") params/parse))
 
@@ -185,11 +184,13 @@
       "null")))
 
 (defn with
-  "The `url` with each attribute `k` set to its value `v`, in order, as
-  the setters of the URL class set them. The attributes are :href,
-  :protocol, :username, :password, :host, :hostname, :port, :pathname,
-  :search and :hash, which take text, and :search-params, which takes
-  name-value pairs. A value that a setter refuses leaves the URL as it is.
+  "The `url` with each attribute `k` set to its value `v` in order, as the
+  setters of the URL class set them. A setter that refuses a value leaves
+  the URL as it is.
+
+  The attributes :href, :protocol, :username, :password, :host, :hostname,
+  :port, :pathname, :search and :hash take text. The attribute
+  :search-params takes name-value pairs.
 
       (with \"https://example.com/a?b\" :pathname \"/c d\" :search \"\")
       ;; => {:scheme \"https\" :host \"example.com\" :path [\"c%20d\"]}"
@@ -198,7 +199,7 @@
 
 (defn- attribute
   "The value of the attribute `k` of the `url`, as its getter in the URL
-  class gives it, or its name-value pairs for :search-params."
+  class returns it, or its name-value pairs for :search-params."
   [url k]
   (case k
     :href          (href url)
@@ -215,8 +216,8 @@
     (throw (setters/no-attribute k))))
 
 (defn update
-  "The `url` with the attribute `k` set to what `f` gives for its value and
-  `args`, as with sets it. The attributes are those of with.
+  "The `url` with the attribute `k` set to what `f` returns for its value
+  and the `args`, as with sets it. The attributes are those of with.
 
       (update \"https://example.com/?q=a\" :search-params params/set \"page\" 2)
       ;; => {:scheme \"https\" :host \"example.com\" :path [\"\"]
@@ -245,8 +246,8 @@
 
 (defn path-starts-with?
   "Whether the path of the `url` starts with the segments of the path of
-  `prefix`, e.g. /a/b with /a but not /ab with /a, as cookies compare
-  paths. An opaque path starts with nothing."
+  `prefix`, the way cookies compare paths. So /a/b starts with /a, but /ab
+  doesn't. An opaque path starts with nothing."
   [url prefix]
   (let [a (:path (->url url))
         b (:path (->url prefix))]
@@ -262,10 +263,11 @@
 
 (defn validation-errors
   "The validation errors of the text `s` as a URL resolved against `base`,
-  as a vector of keywords in the order they're found, e.g.
-  :invalid-credentials, or nil when the base doesn't parse. The errors are
-  those that section 1.1 of the URL Standard names, in lower case. When `s`
-  doesn't parse, the last error is the one that made it fail, if any.
+  or nil when the base doesn't parse.
+
+  The errors are keywords in the order they're found, named as in section
+  1.1 of the URL Standard, e.g. :invalid-credentials. When `s` doesn't
+  parse, the last error is the one that made it fail (if there is one).
 
       (validation-errors \"https://user@example.org/a b\")
       ;; => [:invalid-credentials :invalid-url-unit]"

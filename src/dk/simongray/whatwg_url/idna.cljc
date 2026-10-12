@@ -1,20 +1,19 @@
 (ns dk.simongray.whatwg-url.idna
   "Domain names in Unicode and in ASCII, by Unicode IDNA Compatibility
-  Processing, UTS #46 of Unicode 18.0.0 (revision 36).
+  Processing (UTS #46) of Unicode 18.0.0, revision 36.
 
-  The options are the flags of UTS #46, and default-options has those that
-  the URL Standard uses for a domain of a URL. NFC is the platform's, so a
-  domain with a code point that's newer than the platform's Unicode is an
-  error rather than a guess."
+  The options are those of UTS #46, and default-options holds the ones
+  that the URL Standard uses for the domain of a URL. NFC comes from the
+  platform. A domain is an error rather than a guess when it has a new
+  code point that NFC doesn't leave alone and the platform doesn't know."
   (:require [clojure.string :as str]
             [dk.simongray.whatwg-url.chars :as chars]
             [dk.simongray.whatwg-url.punycode :as punycode]
             [dk.simongray.whatwg-url.unicode :as unicode]))
 
 (def default-options
-  "The flags of UTS #46 that the URL Standard's domain parser gives
-  Unicode ToASCII when it isn't strict, and that its domain to Unicode
-  gives Unicode ToUnicode:
+  "The options that the URL Standard uses for the domain of a URL, both in
+  ToASCII when it isn't strict and in ToUnicode:
 
   - :check-hyphens?, true to refuse a hyphen at the start or the end of a
     label, or in its third and fourth place
@@ -166,7 +165,7 @@
 (defn process
   "The Unicode `domain` mapped, normalized and converted by the processing
   steps of UTS #46 with `opts`, as a map of the :domain and whether an
-  :error? was recorded. The `opts` are merged with default-options."
+  :error? was recorded. The `opts` override default-options."
   ([domain]
    (process domain {}))
   ([domain opts]
@@ -196,7 +195,7 @@
 ;; UTS #46, section 4.2
 (defn to-ascii
   "The `domain` in ASCII by Unicode ToASCII with `opts`, or nil when an
-  error was recorded. The `opts` are merged with default-options.
+  error was recorded. The `opts` override default-options.
 
       (to-ascii \"Bücher.de\")
       ;; => \"xn--bcher-kva.de\""
@@ -216,7 +215,7 @@
 ;; UTS #46, section 4.3
 (defn to-unicode
   "The `domain` in Unicode by Unicode ToUnicode with `opts`, or nil when an
-  error was recorded. The `opts` are merged with default-options.
+  error was recorded. The `opts` override default-options.
 
       (to-unicode \"xn--bcher-kva.de\")
       ;; => \"bücher.de\""

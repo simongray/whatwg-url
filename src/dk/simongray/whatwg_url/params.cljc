@@ -1,12 +1,12 @@
 (ns dk.simongray.whatwg-url.params
-  "The name-value pairs of application/x-www-form-urlencoded, which the
-  query of a URL and the body of a form hold, by the URL Standard, section
-  5, with the operations of URLSearchParams of section 6.2.
+  "Query strings and form bodies in application/x-www-form-urlencoded, by
+  the URL Standard, section 5, with the methods of URLSearchParams from
+  section 6.2.
 
-  The pairs are a vector of name-value vectors in order, and a name can
-  come more than once. Each function also takes a map or any other seq of
-  pairs, e.g. {:q \"clojure\" :page 2}, and reads a keyword as its name,
-  e.g. :q as q, and any other value as its text."
+  The pairs are a vector of name-value vectors in order, in which a name
+  can come more than once. Each function also takes a map or any other seq
+  of pairs, e.g. {:q \"clojure\" :page 2}. A keyword is read as its name
+  (:q as q) and any other value as its text."
   (:refer-clojure :exclude [get set sort])
   (:require [clojure.string :as str]
             [dk.simongray.whatwg-url.chars :as chars]
@@ -26,8 +26,9 @@
 
 ;; URL Standard, section 5.1
 (defn parse
-  "The pairs of the application/x-www-form-urlencoded text `s`, e.g. the
-  query of a URL. A + is a space, and a name without = has an empty value.
+  "The name-value pairs of the application/x-www-form-urlencoded text `s`,
+  e.g. the query of a URL. A + reads as a space. A name without = has an
+  empty value.
 
       (parse \"q=clojure+podcasts&page=2&debug\")
       ;; => [[\"q\" \"clojure podcasts\"] [\"page\" \"2\"] [\"debug\" \"\"]]"
@@ -43,8 +44,8 @@
 
 ;; URL Standard, section 5.2
 (defn serialize
-  "The application/x-www-form-urlencoded text of the `pairs`, which leaves
-  out a pair whose value is nil.
+  "The `pairs` as application/x-www-form-urlencoded text, leaving out any
+  pair whose value is nil.
 
       (serialize {:q \"clojure podcasts\" :page 2})
       ;; => \"q=clojure+podcasts&page=2\""
@@ -99,9 +100,9 @@
    (into [] (remove #(named? name value %)) pairs)))
 
 (defn set
-  "The `pairs` with the value of the first pair with the `name` replaced by
-  `value`, and the other pairs with the name left out, or with the pair at
-  the end when there's none."
+  "The `pairs` with the first pair of the `name` set to `value` and any
+  later pairs of the name removed. When no pair has the name, the new pair
+  goes at the end."
   [pairs name value]
   (if (has? pairs name)
     (first (reduce (fn [[out seen?] pair]
@@ -114,8 +115,8 @@
     (append pairs name value)))
 
 (defn sort
-  "The `pairs` sorted by name, by UTF-16 code units, with the pairs of a
-  name in the order they were in."
+  "The `pairs` sorted by name in the order of UTF-16 code units. The pairs
+  of a name keep their order."
   [pairs]
   (vec (sort-by (comp text first) pairs)))
 
