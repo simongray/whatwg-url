@@ -10,7 +10,7 @@
   of mailto:me@example.com.
 
   Each state is a function of the parse, which gives the parse of the
-  next state. The parse is a map of:
+  next state. The parse is a record of:
 
   - :input, the text, and :i, the pointer into it
   - :url, the URL so far, and :base, the URL to resolve against
@@ -18,6 +18,7 @@
   - :errors, a vector of the validation errors when they're asked for,
     and nil otherwise
   - :state, the state to run next, or :done or :failure
+  - :buffer, the start of the path that the file host state read
 
   TODO: the encodings other than UTF-8 that HTML gives the parser for the
   query of a document in a legacy encoding."
@@ -26,15 +27,23 @@
             [dk.simongray.whatwg-url.hosts :as hosts]
             [dk.simongray.whatwg-url.percent :as percent]))
 
+;; a record rather than a map, so that the states read and set its keys as
+;; fields
+(defrecord ^{:doc "The state of a parse, as the namespace describes it."}
+  Parse [input i url base override errors state buffer])
+
 ;; URL Standard, section 4.2
 (def default-ports
   "The special schemes, each with its default port, or nil."
   {"ftp" 21 "file" nil "http" 80 "https" 443 "ws" 80 "wss" 443})
 
+;; a case of constants, which is quicker than a lookup in default-ports
 (defn special?
   "Whether the `scheme` is special."
   [scheme]
-  (contains? default-ports scheme))
+  (case scheme
+    ("ftp" "file" "http" "https" "ws" "wss") true
+    false))
 
 (defn put
   "The `url` with its key `k` set to `v`, or without it when `v` is nil,
@@ -68,7 +77,7 @@
 (defn- c
   "The code point at `i` of the `input`, or -1 at its end."
   ^long [input ^long i]
-  (if (< i (count input)) (chars/code-point-at input i) -1))
+  (if (< i (chars/length input)) (chars/code-point-at input i) -1))
 
 (defn- url-special?
   "Whether the URL of the `parse` has a special scheme."
@@ -85,23 +94,22 @@
   [special ^long x]
   (or (== x -1) (== x 0x3F) (== x 0x23) (slash? special x)))
 
-(defn- scan
-  "The index of the first code point of the `input` from `i` that `pred`
-  holds for, or the end of the input."
-  [input ^long i pred]
-  (let [n (count input)]
-    (loop [i i]
-      (if (< i n)
-        (let [x (chars/code-point-at input i)]
-          (if (pred x)
-            i
-            (recur (+ i (chars/width x)))))
-        n))))
-
+;; two assocs, since an assoc of more keys than one walks a seq of them
 (defn- go
   "The `parse` in the `state` at `i`."
   [parse state i]
-  (assoc parse :state state :i i))
+  (-> parse (assoc :state state) (assoc :i i)))
+
+;; rather than assoc-in and update-in, which walk a seq of their keys
+(defn- with-url
+  "The `parse` with the key `k` of its URL set to `v`."
+  [parse k v]
+  (assoc parse :url (assoc (:url parse) k v)))
+
+(defn- append-url
+  "The `parse` with the text `s` appended to the key `k` of its URL."
+  [parse k s]
+  (with-url parse k (str (get (:url parse) k) s)))
 
 (defn- done
   "The `parse` that has ended with its URL."
@@ -123,7 +131,7 @@
 (defn- url-units
   "The `parse` with an invalid-url-unit error when the input from `start`
   to `end` isn't all URL units."
-  [parse start end]
+  [parse ^long start ^long end]
   (cond-> parse
     (and (:errors parse) (not (percent/url-units? (:input parse) start end)))
     (error :invalid-url-unit)))
@@ -166,18 +174,22 @@
   [^long x]
   (or (chars/ascii-alphanumeric? x) (== x 0x2B) (== x 0x2D) (== x 0x2E)))
 
+(chars/defscan scheme-end
+  "The index in the `input` from `i` where a scheme ends."
+  [input i] [x] (not (scheme-code-point? x)))
+
 ;; scheme state
 (defn- scheme
   "The `parse` from the scheme state."
   [{:keys [input i override base] :as parse}]
-  (let [j (scan input i #(not (scheme-code-point? %)))]
+  (let [j (scheme-end input i)]
     (cond
       (and (== 0x3A (c input j)) override)
       (scheme-override parse (chars/lower-case (subs input i j)))
 
       (== 0x3A (c input j))
       (let [s     (chars/lower-case (subs input i j))
-            parse (assoc-in parse [:url :scheme] s)
+            parse (with-url parse :scheme s)
             next  (inc j)]
         (cond
           (= "file" s)
@@ -196,7 +208,7 @@
           (go parse :path-or-authority (inc next))
 
           :else
-          (go (assoc-in parse [:url :path] "") :opaque-path next)))
+          (go (with-url parse :path "") :opaque-path next)))
 
       (not override)
       (go parse :no-scheme 0)
@@ -251,7 +263,7 @@
 (defn- relative
   "The `parse` from the relative state."
   [{:keys [input i base] :as parse}]
-  (let [parse (assoc-in parse [:url :scheme] (:scheme base))
+  (let [parse (with-url parse :scheme (:scheme base))
         x     (c input i)]
     (cond
       (== 0x2F x)
@@ -263,8 +275,8 @@
       :else
       (let [parse (from-base parse [:username :password :host :port :path :query])]
         (case x
-          0x3F (go (assoc-in parse [:url :query] "") :query (inc i))
-          0x23 (go (assoc-in parse [:url :fragment] "") :fragment (inc i))
+          0x3F (go (with-url parse :query "") :query (inc i))
+          0x23 (go (with-url parse :fragment "") :fragment (inc i))
           -1   (done parse)
           (-> parse
               (update :url #(-> (dissoc % :query)
@@ -299,11 +311,16 @@
         (error :special-scheme-missing-following-solidus)
         (go :special-authority-ignore-slashes i))))
 
+(chars/defscan slashes-end
+  "The index in the `input` from `i` where a run of slashes and
+  backslashes ends."
+  [input i] [x] (not (or (== 0x2F x) (== 0x5C x))))
+
 ;; special authority ignore slashes state
 (defn- special-authority-ignore-slashes
   "The `parse` from the special authority ignore slashes state."
   [{:keys [input i] :as parse}]
-  (let [j (scan input i #(not (or (== 0x2F %) (== 0x5C %))))]
+  (let [j (slashes-end input i)]
     (-> (cond-> parse (< i j) (error :special-scheme-missing-following-solidus))
         (go :authority j))))
 
@@ -317,12 +334,17 @@
                             (put :username (encode username))
                             (put :password (some-> password encode))))))
 
+(chars/defscan authority-end
+  "The index in the `input` from `i` where the authority of a URL that's
+  `special` ends."
+  [input i special] [x] (end-of-authority? special x))
+
 ;; authority state
 (defn- authority
   "The `parse` from the authority state."
   [{:keys [input i] :as parse}]
   (let [special (url-special? parse)
-        end     (scan input i #(end-of-authority? special %))
+        end     (authority-end input i special)
         at      (some-> (str/last-index-of (subs input i end) "@") (+ i))]
     (cond
       (nil? at)
@@ -343,21 +365,22 @@
   (let [[host errors] (hosts/parse-report s (not (url-special? parse)) (:errors parse))
         parse         (assoc parse :errors errors)]
     (if host
-      (assoc-in parse [:url :host] host)
+      (with-url parse :host host)
       (failure parse))))
 
+;; a code unit at a time, as for chars/defscan
 (defn- host-end
   "The index in the `input` from `i` where the host of a URL that's
   `special` ends: the end of the authority, or a colon outside brackets."
-  [input i special]
-  (let [n (count input)]
+  ^long [input ^long i special]
+  (let [n (chars/length input)]
     (loop [j i brackets? false]
       (if (< j n)
-        (let [x (chars/code-point-at input j)]
+        (let [x (chars/code-at input j)]
           (cond
             (end-of-authority? special x)     j
             (and (== 0x3A x) (not brackets?)) j
-            :else                             (recur (+ j (chars/width x))
+            :else                             (recur (inc j)
                                                      (case (int x)
                                                        0x5B true
                                                        0x5D false
@@ -403,11 +426,15 @@
       (recur (inc k) (+ (* n 10) (- (chars/code-at digits k) 0x30)))
       (min n 65536))))
 
+(chars/defscan digits-end
+  "The index in the `input` from `i` where a run of ASCII digits ends."
+  [input i] [x] (not (chars/ascii-digit? x)))
+
 ;; port state
 (defn- port
   "The `parse` from the port state."
   [{:keys [input i override] :as parse}]
-  (let [j      (scan input i #(not (chars/ascii-digit? %)))
+  (let [j      (digits-end input i)
         digits (subs input i j)]
     (cond
       (not (or (end-of-authority? (url-special? parse) (c input j)) override))
@@ -440,8 +467,8 @@
       (= "file" (:scheme base))
       (let [parse (from-base parse [:host :path :query])]
         (case x
-          0x3F (go (assoc-in parse [:url :query] "") :query (inc i))
-          0x23 (go (assoc-in parse [:url :fragment] "") :fragment (inc i))
+          0x3F (go (with-url parse :query "") :query (inc i))
+          0x23 (go (with-url parse :fragment "") :fragment (inc i))
           -1   (done parse)
           (-> (if (starts-with-drive-letter? input i)
                 (-> parse
@@ -477,11 +504,15 @@
       :else
       (go parse :path i))))
 
+(chars/defscan file-host-end
+  "The index in the `input` from `i` where the host of a file URL ends."
+  [input i] [x] (or (== 0x2F x) (== 0x5C x) (== 0x3F x) (== 0x23 x)))
+
 ;; file host state
 (defn- file-host
   "The `parse` from the file host state."
   [{:keys [input i override] :as parse}]
-  (let [j      (scan input i #(or (== 0x2F %) (== 0x5C %) (== 0x3F %) (== 0x23 %)))
+  (let [j      (file-host-end input i)
         buffer (subs input i j)]
     (cond
       (and (not override) (drive-letter? buffer false))
@@ -491,7 +522,7 @@
           (go :path j))
 
       (= "" buffer)
-      (let [parse (assoc-in parse [:url :host] "")]
+      (let [parse (with-url parse :host "")]
         (if override (done parse) (go parse :path-start j)))
 
       :else
@@ -499,7 +530,7 @@
         (if (failed? parse)
           parse
           (let [parse (cond-> parse
-                        (= "localhost" (:host (:url parse))) (assoc-in [:url :host] ""))]
+                        (= "localhost" (:host (:url parse))) (with-url :host ""))]
             (if override (done parse) (go parse :path-start j))))))))
 
 ;; path start state
@@ -513,10 +544,10 @@
           (go :path (if (or (== 0x2F x) (== 0x5C x)) (inc i) i)))
 
       (and (not override) (== 0x3F x))
-      (go (assoc-in parse [:url :query] "") :query (inc i))
+      (go (with-url parse :query "") :query (inc i))
 
       (and (not override) (== 0x23 x))
-      (go (assoc-in parse [:url :fragment] "") :fragment (inc i))
+      (go (with-url parse :fragment "") :fragment (inc i))
 
       (not= -1 x)
       (go parse :path (if (== 0x2F x) (inc i) i))
@@ -531,7 +562,7 @@
   "The kind of dot segment that the path `segment` is, :single, e.g. . or
   %2e, or :double, e.g. .. or %2e%2e, or nil for another segment."
   [segment]
-  (when (and (<= 1 (count segment) 6)
+  (when (and (let [n (chars/length segment)] (and (<= 1 n) (<= n 6)))
              (let [x (chars/code-at segment 0)] (or (== x 0x2E) (== x 0x25))))
     (case (chars/lower-case segment)
       ("." "%2e")                   :single
@@ -549,16 +580,22 @@
       (conj path (str (subs segment 0 1) ":"))
       (conj path segment))))
 
+(chars/defscan segment-end
+  "The index in the `input` from `i` where a segment of the path of a URL
+  that's `special` ends, and where the path ends when `query?`."
+  [input i special query?]
+  [x] (or (slash? special x) (and query? (or (== 0x3F x) (== 0x23 x)))))
+
 ;; path state
 (defn- path
   "The `parse` from the path state, which reads all the segments of the
   path."
   [{:keys [input i override buffer url] :as parse}]
-  (let [special    (url-special? parse)
-        delimiter? #(or (slash? special %)
-                        (and (not override) (or (== 0x3F %) (== 0x23 %))))]
-    (loop [i i buffer buffer path (vec (:path url)) parse parse]
-      (let [j       (scan input i delimiter?)
+  (let [special (url-special? parse)
+        query?  (not override)]
+    ;; a primitive index, which recur and the calls below don't box
+    (loop [i (long i) buffer buffer path (vec (:path url)) parse parse]
+      (let [j       (segment-end input i special query?)
             x       (c input j)
             segment (cond->> (percent/encode-span percent/path-set input i j)
                       buffer (str buffer))
@@ -567,17 +604,27 @@
             path    (with-segment (:scheme url) path segment (slash? special x))]
         (if (slash? special x)
           (recur (inc j) nil path parse)
-          (let [parse (-> parse (dissoc :buffer) (assoc-in [:url :path] path))]
+          (let [parse (-> parse (assoc :buffer nil) (with-url :path path))]
             (case x
               -1   (done parse)
-              0x3F (go (assoc-in parse [:url :query] "") :query (inc j))
-              (go (assoc-in parse [:url :fragment] "") :fragment (inc j)))))))))
+              0x3F (go (with-url parse :query "") :query (inc j))
+              (go (with-url parse :fragment "") :fragment (inc j)))))))))
+
+(chars/defscan path-end
+  "The index in the `input` from `i` where a path ends before a query or
+  a fragment."
+  [input i] [x] (or (== 0x3F x) (== 0x23 x)))
+
+(chars/defscan query-end
+  "The index in the `input` from `i` where a query ends before a
+  fragment."
+  [input i] [x] (== 0x23 x))
 
 ;; opaque path state
 (defn- opaque-path
   "The `parse` from the opaque path state."
   [{:keys [input i] :as parse}]
-  (let [j     (scan input i #(or (== 0x3F %) (== 0x23 %)))
+  (let [j     (path-end input i)
         span  (percent/encode-span percent/c0-control-set input i j)
         ;; a space before the query or the fragment is encoded, so that
         ;; the path doesn't end in one
@@ -585,22 +632,22 @@
                 (and (< i j) (not= -1 (c input j)) (str/ends-with? span " "))
                 (-> (subs 0 (dec (count span))) (str "%20")))
         parse (-> (url-units parse i j)
-                  (update-in [:url :path] str span))]
+                  (append-url :path span))]
     (case (c input j)
       -1   (done parse)
-      0x3F (go (assoc-in parse [:url :query] "") :query (inc j))
-      (go (assoc-in parse [:url :fragment] "") :fragment (inc j)))))
+      0x3F (go (with-url parse :query "") :query (inc j))
+      (go (with-url parse :fragment "") :fragment (inc j)))))
 
 ;; query state
 (defn- query
   "The `parse` from the query state."
   [{:keys [input i override] :as parse}]
-  (let [j     (if override (count input) (scan input i #(== 0x23 %)))
+  (let [j     (if override (count input) (query-end input i))
         set   (if (url-special? parse) percent/special-query-set percent/query-set)
         parse (-> (url-units parse i j)
-                  (update-in [:url :query] str (percent/encode-span set input i j)))]
+                  (append-url :query (percent/encode-span set input i j)))]
     (if (== 0x23 (c input j))
-      (go (assoc-in parse [:url :fragment] "") :fragment (inc j))
+      (go (with-url parse :fragment "") :fragment (inc j))
       (done parse))))
 
 ;; fragment state
@@ -609,7 +656,7 @@
   [{:keys [input i] :as parse}]
   (let [j (count input)]
     (-> (url-units parse i j)
-        (update-in [:url :fragment] str (percent/encode-span percent/fragment-set input i j))
+        (append-url :fragment (percent/encode-span percent/fragment-set input i j))
         done)))
 
 (def states
@@ -636,10 +683,10 @@
    :query                            query
    :fragment                         fragment})
 
-(defn- tab-or-line-break?
-  "Whether the code `x` is a tab or a line break."
-  [^long x]
-  (or (== x 0x09) (== x 0x0A) (== x 0x0D)))
+(chars/defscan tab-or-line-break-at
+  "The index in the `input` from `i` of the first tab or line break, or
+  the end of the input."
+  [input i] [x] (or (== x 0x09) (== x 0x0A) (== x 0x0D)))
 
 (defn- clean?
   "Whether the `input` of a parse has no tab or line break, and when
@@ -650,11 +697,7 @@
              (zero? n)
              (and (< 0x20 (chars/code-at input 0))
                   (< 0x20 (chars/code-at input (dec n)))))
-         (loop [i 0]
-           (cond
-             (== i n)                                     true
-             (tab-or-line-break? (chars/code-at input i)) false
-             :else                                        (recur (inc i)))))))
+         (== n (tab-or-line-break-at input 0)))))
 
 (defn- cleaned
   "The `input` of a parse with its tabs and line breaks removed, and when
@@ -679,20 +722,15 @@
     starts in, e.g. :hostname
   - :errors?, true to collect the validation errors
 
-  The parse is a map with the :url, the :state, which is :done or
-  :failure, and the :errors when they're collected. A setter can change
-  the URL before it fails."
+  The parse has the :url, the :state, which is :done or :failure, and the
+  :errors when they're collected. A setter can change the URL before it
+  fails."
   [input {:keys [base url override errors?]}]
   (let [[input errors] (cleaned (chars/scalar-values input)
                                 (nil? url)
                                 (when errors? []))]
-    (loop [parse {:input    input
-                  :i        0
-                  :url      (or url {:path []})
-                  :base     base
-                  :override override
-                  :errors   errors
-                  :state    (or override :scheme-start)}]
+    (loop [parse (->Parse input 0 (or url {:path []}) base override errors
+                          (or override :scheme-start) nil)]
       (case (:state parse)
         (:done :failure) parse
         (recur ((states (:state parse)) parse))))))

@@ -35,38 +35,42 @@
 
 (defn- base-36
   "The number that the text `s` writes in base 36."
-  [s]
+  ^long [s]
   #?(:clj (Long/parseLong s 36) :cljs (js/parseInt s 36)))
 
+;; arrays rather than vectors, so that a lookup compares primitive numbers
 (defn read-table
-  "The runs of the `text` of a table, as a vector of the first code points,
-  a vector of the last code points and a vector of what `f` gives for the
+  "The runs of the `text` of a table, as an array of the first code points,
+  an array of the last code points and an array of what `f` gives for the
   value of each run."
   [text f]
-  (loop [lines  (rest (str/split-lines text))
-         end    0
-         firsts (transient [])
-         lasts  (transient [])
-         values (transient [])]
-    (if-let [line (first lines)]
-      (let [[gap n v] (str/split line #" ")
-            a         (+ end (base-36 gap))
-            b         (+ a -1 (base-36 n))]
-        (recur (rest lines) (inc b)
-               (conj! firsts a) (conj! lasts b) (conj! values (f v))))
-      [(persistent! firsts) (persistent! lasts) (persistent! values)])))
+  (let [lines  (vec (rest (str/split-lines text)))
+        n      (count lines)
+        firsts (long-array n)
+        lasts  (long-array n)
+        values (object-array n)]
+    (loop [k 0 end 0]
+      (if (< k n)
+        (let [[gap len v] (str/split (nth lines k) #" ")
+              a           (+ end (base-36 gap))
+              b           (+ a -1 (base-36 len))]
+          (aset firsts k a)
+          (aset lasts k b)
+          (aset values k (f v))
+          (recur (inc k) (inc b)))
+        [firsts lasts values]))))
 
 (defn lookup
   "The value of the code point `c` in the `table` that read-table gives, or
   nil when no run has it."
-  [[firsts lasts values] ^long c]
-  (loop [lo 0 hi (dec (count firsts))]
+  [[^longs firsts ^longs lasts ^objects values] ^long c]
+  (loop [lo 0 hi (dec (alength firsts))]
     (when (<= lo hi)
       (let [mid (quot (+ lo hi) 2)]
         (cond
-          (< c (long (nth firsts mid))) (recur lo (dec mid))
-          (< (long (nth lasts mid)) c)  (recur (inc mid) hi)
-          :else                         (nth values mid))))))
+          (< c (aget firsts mid)) (recur lo (dec mid))
+          (< (aget lasts mid) c)  (recur (inc mid) hi)
+          :else                   (aget values mid))))))
 
 (defn- sequence-value
   "The text of the code points in base 36, separated by dots, of `s`."
@@ -95,8 +99,12 @@
   [:mapped \"a\"] for U+0041. A code point the table disallows is
   [:disallowed]."
   [^long c]
-  (if-let [[status m] (lookup @idna-table c)]
-    [status (if (number? m) (chars/from-code-points [(+ c (long m))]) m)]
+  ;; the table's own value, rather than a new vector, unless its mapping
+  ;; is an offset from the code point
+  (if-let [[status m :as value] (lookup @idna-table c)]
+    (if (number? m)
+      [status (chars/from-code-point (+ c (long m)))]
+      value)
     [:disallowed]))
 
 (def bidi-table
@@ -172,8 +180,12 @@
   anyway."
   [s]
   (or #?(:cljs (not (.test unassigned s)))
-      (every? #(or (defined? %) (inert? %) (= [:disallowed] (idna-status %)))
-              (chars/code-points s))))
+      (let [n (chars/length s)]
+        (loop [i 0]
+          (or (== i n)
+              (let [c (chars/code-point-at s i)]
+                (and (or (defined? c) (inert? c) (= [:disallowed] (idna-status c)))
+                     (recur (+ i (chars/width c))))))))))
 
 (defn nfc
   "The text `s` in Unicode Normalization Form C, by the platform."

@@ -4,20 +4,58 @@
 
   The UTF-8 decoder is that of the Encoding Standard, which replaces each
   invalid sequence with U+FFFD as browsers do."
+  #?(:cljs (:require-macros [dk.simongray.whatwg-url.chars :refer [defscan]]))
   #?(:clj (:import [java.util Locale])))
 
-;; a primitive long, which the JVM doesn't box as it does a character
+;; for a test of ASCII, which no surrogate is, a code unit at a time finds
+;; what a code point at a time would
+#?(:clj
+   (defmacro defscan
+     "Define the private function `name` of the `params`, a text, an index
+     and any others, that gives the index of the first code unit `x` of
+     the text from the index for which the expression `test` holds, or the
+     end of the text.
+
+     The test is inlined in a loop that returns a primitive number, so
+     that no code unit is boxed and no closure is made."
+     [name doc [s i & more] [x] test]
+     (let [cljs? (:ns &env)
+           n     (gensym "n")
+           j     (gensym "j")]
+       `(defn- ~name ~doc
+          ~(with-meta (into [(cond-> s (not cljs?) (vary-meta assoc :tag 'String))
+                             (vary-meta i assoc :tag 'long)]
+                            more)
+             {:tag 'long})
+          (let [~n ~(if cljs? `(.-length ~s) `(long (.length ~s)))]
+            (loop [~j ~i]
+              (if (< ~j ~n)
+                (let [~x ~(if cljs?
+                            `(.charCodeAt ~s ~j)
+                            `(long (int (.charAt ~s (unchecked-int ~j)))))]
+                  (if ~test ~j (recur (inc ~j))))
+                ~n)))))))
+
+;; rather than count, which first asks what kind of collection the text is
+(defn length
+  "The number of UTF-16 code units of the text `s`."
+  ^long [s]
+  #?(:clj  (.length ^String s)
+     :cljs (.-length s)))
+
+;; a primitive long, which the JVM doesn't box as it does a character, and
+;; unchecked-int, since int checks for an overflow that no index has
 (defn code-at
   "The UTF-16 code unit at `i` of the text `s`."
   ^long [s ^long i]
-  #?(:clj  (long (int (.charAt ^String s (int i))))
+  #?(:clj  (long (int (.charAt ^String s (unchecked-int i))))
      :cljs (.charCodeAt s i)))
 
 (defn code-point-at
   "The code point at `i` of the text `s`, or the code unit there when it's
   a surrogate without its pair."
   ^long [s ^long i]
-  #?(:clj  (long (.codePointAt ^String s (int i)))
+  #?(:clj  (long (.codePointAt ^String s (unchecked-int i)))
      :cljs (.codePointAt s i)))
 
 (defn width
@@ -57,6 +95,12 @@
   #?(:clj  (.appendCodePoint ^StringBuilder builder (int c))
      :cljs (.append builder (js/String.fromCodePoint c))))
 
+(defn from-code-point
+  "The text of the code point `c`."
+  [^long c]
+  #?(:clj  (Character/toString (unchecked-int c))
+     :cljs (js/String.fromCodePoint c)))
+
 (defn from-code-points
   "The text of the code points `cps`."
   [cps]
@@ -65,23 +109,27 @@
       (append-code-point! b c))
     (str b)))
 
+;; a text without a surrogate is all scalar values, which one quick look at
+;; each code unit tells, and one with a pair takes the slower way
+(defscan surrogate-at
+  "The index in the text `s` from `i` of its first surrogate code unit, or
+  its end."
+  [s i] [x] (surrogate? x))
+
 (defn scalar-values
   "The text `s` with each surrogate that has no pair replaced by U+FFFD, as
   Web IDL converts a USVString."
   [s]
-  (let [n (count s)]
-    (if (loop [i 0]
-          (or (== i n)
-              (let [c (code-point-at s i)]
-                (and (not (surrogate? c)) (recur (+ i (width c)))))))
-      s
-      (let [b (builder)]
-        (loop [i 0]
-          (when (< i n)
-            (let [c (code-point-at s i)]
-              (append-code-point! b (if (surrogate? c) 0xFFFD c))
-              (recur (+ i (width c))))))
-        (str b)))))
+  (if (== (length s) (surrogate-at s 0))
+    s
+    (let [n (length s)
+          b (builder)]
+      (loop [i 0]
+        (when (< i n)
+          (let [c (code-point-at s i)]
+            (append-code-point! b (if (surrogate? c) 0xFFFD c))
+            (recur (+ i (width c))))))
+      (str b))))
 
 (defn ascii?
   "Whether the text `s` is all ASCII."

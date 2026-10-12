@@ -288,6 +288,8 @@ clojure -X:test               # the tests on the JVM
 npm install                   # once, for the Node tests
 clojure -M:cljs compile test  # the tests in Node
 clojure -X:tables             # the Unicode tables in resources
+clojure -M:bench -m dk.simongray.whatwg-url.bench          # benchmarks on the JVM
+clojure -M:cljs release bench && node target/bench.js      # benchmarks in Node
 ```
 
 The script downloads the test data of web-platform-tests, the Unicode

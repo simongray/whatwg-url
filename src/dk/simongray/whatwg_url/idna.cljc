@@ -42,16 +42,24 @@
   "The text `s` mapped by the IDNA mapping table, with the deviations
   mapped too when `transitional?`."
   [s transitional?]
-  (let [b (chars/builder)]
-    (doseq [c (chars/code-points s)]
-      (let [[status mapping] (unicode/idna-status c)]
-        (case status
-          :mapped    (chars/append! b (if (and transitional? (== c 0x1E9E)) "ss" mapping))
-          :deviation (if transitional?
-                       (chars/append! b mapping)
-                       (chars/append-code-point! b c))
-          :ignored   nil
-          (chars/append-code-point! b c))))
+  (let [b (chars/builder)
+        n (chars/length s)]
+    (loop [i 0]
+      (when (< i n)
+        (let [c (chars/code-point-at s i)]
+          ;; the table maps no ASCII but A to Z, which it makes lower case,
+          ;; and two comparisons, as only those of two numbers are inlined
+          (if (< c 0x80)
+            (chars/append-code-point! b (if (and (<= 0x41 c) (<= c 0x5A)) (+ c 0x20) c))
+            (let [[status mapping] (unicode/idna-status c)]
+              (case status
+                :mapped    (chars/append! b (if (and transitional? (== c 0x1E9E)) "ss" mapping))
+                :deviation (if transitional?
+                             (chars/append! b mapping)
+                             (chars/append-code-point! b c))
+                :ignored   nil
+                (chars/append-code-point! b c))))
+          (recur (+ i (chars/width c))))))
     (str b)))
 
 ;; RFC 5892, appendix A.1 and A.2
@@ -144,11 +152,15 @@
       [label (boolean (:ignore-invalid-punycode? opts))])))
 
 (defn- bidi-domain?
-  "Whether one of the `labels` of a domain has a code point of the bidi
-  class R, AL or AN."
-  [labels]
-  (some #(#{:R :AL :AN} (unicode/bidi-class %))
-        (mapcat chars/code-points labels)))
+  "Whether the `domain` has a code point of the bidi class R, AL or AN,
+  which no ASCII code point has."
+  [domain]
+  (let [n (chars/length domain)]
+    (loop [i 0]
+      (and (< i n)
+           (let [c (chars/code-point-at domain i)]
+             (or (and (<= 0x80 c) (contains? #{:R :AL :AN} (unicode/bidi-class c)))
+                 (recur (+ i (chars/width c)))))))))
 
 ;; UTS #46, section 4
 (defn process
@@ -163,13 +175,14 @@
          ascii?  (chars/ascii? s)
          known?  (or ascii? (unicode/known? s))
          s       (if ascii? s (unicode/nfc s))
-         results (map #(converted % opts) (str/split s #"\." -1))
-         labels  (map first results)]
-     {:domain (str/join "." labels)
+         results (mapv #(converted % opts) (str/split s #"\." -1))
+         labels  (mapv first results)
+         domain  (str/join "." labels)]
+     {:domain domain
       :error? (not (and known?
                         (every? second results)
                         (or (not check-bidi?)
-                            (not (bidi-domain? labels))
+                            (not (bidi-domain? domain))
                             (every? #(or (= "" %) (bidi-ok? (chars/code-points %)))
                                     labels))))})))
 

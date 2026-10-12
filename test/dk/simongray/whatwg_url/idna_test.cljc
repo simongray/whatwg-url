@@ -75,6 +75,16 @@
              (idna/to-ascii source (assoc strict :transitional? true)))
           "toAsciiT"))))
 
+;; what the fast paths for ASCII of the mapping and the bidi rule take for
+;; granted
+(deftest ascii-in-the-tables
+  (testing "the IDNA table maps no ASCII but A to Z, which it makes lower case"
+    (doseq [c (range 0x80)]
+      (is (= (if (<= 0x41 c 0x5A) [:mapped (str (char (+ c 0x20)))] [:valid])
+             (unicode/idna-status c)))))
+  (testing "no ASCII has the bidi class R, AL or AN"
+    (is (not-any? #(#{:R :AL :AN} (unicode/bidi-class %)) (range 0x80)))))
+
 ;; UTS #46, section 4, step 2, by the platform's NFC
 (deftest the-nfc-of-the-platform
   (testing "a code point that NFC leaves alone, even where the platform's Unicode lacks it, e.g. U+18E00 of Unicode 18"

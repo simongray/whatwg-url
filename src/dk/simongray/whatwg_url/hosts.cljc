@@ -34,6 +34,16 @@
       (== c 0x25)
       (== c 0x7F)))
 
+(chars/defscan forbidden-host-code-point-at
+  "The index in the text `s` from `i` of its first forbidden host code
+  point, or its end."
+  [s i] [x] (forbidden-host-code-point? x))
+
+(chars/defscan forbidden-domain-code-point-at
+  "The index in the text `s` from `i` of its first forbidden domain code
+  point, or its end."
+  [s i] [x] (forbidden-domain-code-point? x))
+
 (defn- has?
   "Whether the text `s` has a code unit that `pred` holds for."
   [pred s]
@@ -50,20 +60,19 @@
   hexadecimal after 0x or octal after 0, and whether it isn't decimal, as a
   pair, or nil when it doesn't read. A number above 2^32 is 2^32."
   [s]
-  (let [n             (count s)
-        [radix start] (cond
-                        (and (<= 2 n) (#{"0x" "0X"} (subs s 0 2))) [16 2]
-                        (and (<= 2 n) (= "0" (subs s 0 1)))        [8 1]
-                        :else                                      [10 0])
-        digit         (fn [c]
-                        (when (chars/ascii-hex-digit? c)
-                          (let [v (chars/hex-value c)]
-                            (when (< v radix) v))))]
+  (let [n      (chars/length s)
+        zeroed (and (<= 2 n) (== 0x30 (chars/code-at s 0)))
+        hex?   (and zeroed (let [x (chars/code-at s 1)] (or (== 0x78 x) (== 0x58 x))))
+        ;; ifs rather than a cond, whose last branch would be nil and box
+        ;; the number
+        radix  (if hex? 16 (if zeroed 8 10))
+        start  (if hex? 2 (if zeroed 1 0))]
     (when (pos? n)
       (loop [i start v 0]
         (if (< i n)
-          (when-let [d (digit (chars/code-at s i))]
-            (recur (inc i) (min (+ (* v radix) d) 0x100000000)))
+          (let [c (chars/code-at s i)]
+            (when (and (chars/ascii-hex-digit? c) (< (chars/hex-value c) radix))
+              (recur (inc i) (min (+ (* v radix) (chars/hex-value c)) 0x100000000))))
           [v (not= 10 radix)])))))
 
 (defn ends-in-a-number?
@@ -72,9 +81,12 @@
   example.1 or example.0x."
   [s]
   (let [s    (cond-> s (str/ends-with? s ".") (subs 0 (dec (count s))))
-        last (subs s (inc (or (str/last-index-of s ".") -1)))]
-    (boolean (or (and (seq last) (not (has? #(not (chars/ascii-digit? %)) last)))
-                 (ipv4-number last)))))
+        last (subs s (inc (long (or (str/last-index-of s ".") -1))))]
+    ;; a number in any base starts with a digit, which most labels don't
+    (boolean (and (seq last)
+                  (chars/ascii-digit? (chars/code-at last 0))
+                  (or (not (has? #(not (chars/ascii-digit? %)) last))
+                      (ipv4-number last))))))
 
 (defn- power-of-256
   "256 to the power of `k`."
@@ -288,7 +300,7 @@
   "The opaque host of the text `s`, and `errors` with its validation
   errors added, as a pair."
   [s errors]
-  (if (has? forbidden-host-code-point? s)
+  (if (< (forbidden-host-code-point-at s 0) (chars/length s))
     [nil (with-error errors :host-invalid-code-point)]
     [(percent/encode s percent/c0-control-set)
      (cond-> errors
@@ -314,7 +326,8 @@
                         strict?               strict-result
                         (chars/ascii? domain) (chars/lower-case domain)
                         :else                 (idna/to-ascii domain))]
-    [(when (and (seq result) (not (has? forbidden-domain-code-point? result)))
+    [(when (and (seq result)
+                (== (chars/length result) (forbidden-domain-code-point-at result 0)))
        result)
      errors]))
 

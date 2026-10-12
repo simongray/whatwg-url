@@ -17,10 +17,12 @@
   [x]
   (if (keyword? x) (subs (str x) 1) (str x)))
 
+;; ClojureScript makes a regular expression for each replace, so it's only
+;; done when there's a + to replace
 (defn- decode
   "The name or value `s` with + as a space, percent-decoded."
   [s]
-  (percent/decode (str/replace s "+" " ")))
+  (percent/decode (cond-> s (str/includes? s "+") (str/replace "+" " "))))
 
 ;; URL Standard, section 5.1
 (defn parse
@@ -30,10 +32,13 @@
       (parse \"q=clojure+podcasts&page=2&debug\")
       ;; => [[\"q\" \"clojure podcasts\"] [\"page\" \"2\"] [\"debug\" \"\"]]"
   [s]
+  ;; the first = by its index, since ClojureScript splits with a limit by a
+  ;; slow loop of re-find
   (into []
         (comp (remove #(= "" %))
-              (map #(let [[k v] (str/split % #"=" 2)]
-                      [(decode k) (decode (or v ""))])))
+              (map #(if-let [eq (str/index-of % "=")]
+                      [(decode (subs % 0 eq)) (decode (subs % (inc (long eq))))]
+                      [(decode %) ""])))
         (str/split (chars/scalar-values (str s)) #"&")))
 
 ;; URL Standard, section 5.2
@@ -46,10 +51,13 @@
   [pairs]
   (let [encode #(percent/encode (chars/scalar-values (text %))
                                 percent/form-urlencoded-set)]
-    (->> (for [[k v] pairs
-               :when (some? v)]
-           (str (encode k) "=" (encode v)))
-         (str/join "&"))))
+    ;; one pass into one builder, with no lazy seq between
+    (transduce (comp (filter (fn [[_ v]] (some? v)))
+                     (map (fn [[k v]] (str (encode k) "=" (encode v))))
+                     (interpose "&"))
+               (completing chars/append! str)
+               (chars/builder)
+               pairs)))
 
 (defn- named?
   "Whether the pair of `k` and `v` has the `name`, and the `value` when

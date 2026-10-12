@@ -64,17 +64,25 @@
   (let [hex "0123456789ABCDEF"]
     (mapv #(str "%" (nth hex (quot % 16)) (nth hex (rem % 16))) (range 256))))
 
+;; a loop of its own, since a loop inside an expression is compiled to a
+;; closure
+(defn- outside?
+  "Whether no code unit of the text `s` from `start` to `end` is in the
+  percent-encode `set`."
+  [set s ^long start ^long end]
+  (loop [i start]
+    (cond
+      (== i end)                true
+      (set (chars/code-at s i)) false
+      :else                     (recur (inc i)))))
+
 (defn ^:no-doc encode-span
   "The code points of the text `s` from `start` to `end` with each one of
   the percent-encode `set` percent-encoded as UTF-8, a space as + when the
   set is form-urlencoded-set."
   [set s ^long start ^long end]
   (let [plus? (identical? set form-urlencoded-set)]
-    (if (loop [i start]
-          (cond
-            (== i end)                     true
-            (set (chars/code-at s i))      false
-            :else                          (recur (inc i))))
+    (if (outside? set s start end)
       (subs s start end)
       (let [b (chars/builder)]
         (loop [i start]

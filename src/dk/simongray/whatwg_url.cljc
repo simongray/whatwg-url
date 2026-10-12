@@ -134,7 +134,8 @@
   (when-let [{:keys [path]} (->url url)]
     (if (string? path)
       path
-      (apply str (map #(str "/" %) path)))))
+      ;; a builder rather than apply str of a lazy seq
+      (str (reduce #(-> %1 (chars/append! "/") (chars/append! %2)) (chars/builder) path)))))
 
 ;; URL Standard, section 4.5, the URL serializer
 (defn- serialize
@@ -412,13 +413,14 @@
       ;; => {:scheme \"https\" :host \"example.com\" :path [\"c%20d\"]}"
   [url k v & kvs]
   (when-let [url (->url url)]
-    (in-order
-     (reduce (fn [url [k v]]
-               (if (= :search-params k)
-                 (parser/put url :query (not-empty (params/serialize v)))
-                 (set-attribute url k (str v))))
-             url
-             (partition 2 (list* k v kvs))))))
+    ;; a pair at a time, rather than through the lazy seqs of partition
+    (loop [url url k k v v kvs kvs]
+      (let [url (if (= :search-params k)
+                  (parser/put url :query (not-empty (params/serialize v)))
+                  (set-attribute url k (str v)))]
+        (if kvs
+          (recur url (first kvs) (second kvs) (nnext kvs))
+          (in-order url))))))
 
 (defn- attribute
   "The value of the attribute `k` of the `url`, as its getter in the URL

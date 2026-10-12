@@ -3,4 +3,8 @@
           :test {:target    :node-test
                  :output-to "target/node-tests.js"
                  :ns-regexp "-test$"
-                 :autorun   true}}}
+                 :autorun   true}
+          ;; clojure -M:cljs release bench && node target/bench.js
+          :bench {:target    :node-script
+                  :output-to "target/bench.js"
+                  :main      dk.simongray.whatwg-url.bench/-main}}}
