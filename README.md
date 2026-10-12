@@ -7,6 +7,12 @@ This is a Clojure and ClojureScript implementation of the
 [WHATWG URL Standard](https://url.spec.whatwg.org/), which says how
 browsers parse, resolve, write and compare URLs. URLs are plain maps.
 
+Clojure's other URL libraries and the JDK's follow the URI RFCs or no
+spec at all, so they read some URLs differently from a browser. That
+matters for a URL that someone else wrote, e.g. a link whose host you
+check before you fetch it, as the [comparison](#other-url-libraries)
+shows.
+
 - **The browser's parser.** A URL reads the same as in a browser, so a
   security check sees what the browser sees, e.g. the host of
   `http://0x7f.1/` is 127.0.0.1.
@@ -17,9 +23,11 @@ browsers parse, resolve, write and compare URLs. URLs are plain maps.
 - **Validation errors as data.** A URL that parses can still be invalid,
   and you can ask why.
 
-The same code runs on the JVM, in Node and in the browser, with the same
-results on each. There are no dependencies but Clojure, and it passes the
-URL tests of [web-platform-tests](https://github.com/web-platform-tests/wpt/tree/master/url).
+The same code runs on the JVM, in Node and in the browser. The platform's
+own code does the work where every platform gives the same result, e.g.
+NFC, and the library fills in the rest, so the results are the same on
+each. There are no dependencies but Clojure, and it passes the URL tests
+of [web-platform-tests](https://github.com/web-platform-tests/wpt/tree/master/url).
 
 > This library brings together the URL code of
 > [wary-fetch](https://github.com/simongray/wary-fetch),
@@ -50,6 +58,9 @@ dk.simongray/whatwg-url
 
 For ClojureScript, shadow-cljs only reads Git dependencies from
 `deps.edn`, so also set `:deps true` in your `shadow-cljs.edn`.
+
+Parsing URLs
+------------
 
 Parse a URL with `url/parse`, optionally against a base:
 
@@ -203,12 +214,52 @@ tables the library carries. The `dk.simongray.whatwg-url.idna` namespace
 has `to-ascii` and `to-unicode` with each flag of UTS #46, and
 `dk.simongray.whatwg-url.punycode` has Punycode.
 
-The normalization to NFC is the platform's, i.e. that of the JDK or of
-the JavaScript engine, which may have an older version of Unicode. Since
+The library carries only the tables that the platforms lack or have from
+an older version of Unicode, e.g. neither has UTS #46. The normalization
+to NFC is the platform's, i.e. that of the JDK or of the JavaScript
+engine, which may have an older version of Unicode too. Since
 NFC never changes for the characters that a version has, the result is
 that of Unicode 18.0.0, unless the domain has a character the platform
 doesn't know. Such a domain is refused rather than converted wrongly, so
 on an older platform a domain with very new characters doesn't parse.
+
+Other URL libraries
+-------------------
+
+This is the host that each library reads from some URLs, with
+lambdaisland/uri 1.19.155 and cemerick/url 0.1.1. What differs from a
+browser is in bold:
+
+| URL | whatwg-url and browsers | lambdaisland/uri | cemerick/url | java.net.URI |
+|---|---|---|---|---|
+| `http://0x7f.1/` | 127.0.0.1 | **0x7f.1** | **0x7f.1** | **nil** |
+| `http://2130706433/` | 127.0.0.1 | **2130706433** | **2130706433** | **2130706433** |
+| `https:\\evil.example\path` | evil.example | **nil** | **empty** | **throws** |
+| `https://faß.example/` | xn--fa-hia.example | **faß**.example | **faß**.example | **nil** |
+| `http://[::ffff:127.0.0.1]/` | [::ffff:7f00:1] | **nil** | [::ffff:**127.0.0.1**] | [::ffff:**127.0.0.1**] |
+
+The paths differ too:
+
+| URL | whatwg-url and browsers | lambdaisland/uri | cemerick/url | java.net.URI |
+|---|---|---|---|---|
+| `http://example.com/public/../admin` | /admin | **/public/../admin** | /admin | **/public/../admin** |
+| `http://example.com/public/%2e%2e/admin` | /admin | **/public/%2e%2e/admin** | **/public/%2e%2e/admin** | **/public/%2e%2e/admin** |
+
+When normalized, java.net.URI gives /admin for the first.
+
+**Resolving links differs as well.** On a page at
+`https://good.example/`, a browser follows the link `/\evil.example` to evil.example, while
+lambdaisland/uri and cemerick/url give a path on good.example and
+java.net.URI throws. A check with either library that a redirect stays
+on your own site would let this link through.
+
+For URLs that you write yourself, e.g. the requests of an API client,
+any of them will do. In ClojureScript, `js/URL` is the platform's own
+implementation of the standard, but it gives neither validation errors
+nor the URL as data, and its results vary with the engine and its
+version. On the JVM, [galimatias](https://github.com/smola/galimatias)
+implements an early version of the standard and was last released in
+2015.
 
 Principles
 ----------
@@ -223,8 +274,9 @@ Principles
 - **Convention over configuration.** The defaults are those of the
   standard, e.g. the flags of UTS #46 that it uses for a URL, and the
   options of each function change them.
-- **One codebase.** The library is written in `.cljc` and behaves the
-  same everywhere.
+- **One codebase.** The library is written in `.cljc` and uses the
+  platform's own code only where every platform gives the same result,
+  so it behaves the same everywhere.
 
 Development
 -----------
