@@ -18,6 +18,14 @@
   "The greatest threshold of a digit."
   26)
 
+(def ^:no-doc initial-n
+  "The code point that encoding and decoding start from."
+  0x80)
+
+(def ^:no-doc initial-bias
+  "The bias that encoding and decoding start with."
+  72)
+
 (def ^:no-doc max-int
   "The greatest number that encoding and decoding allow."
   0x7FFFFFFF)
@@ -71,7 +79,9 @@
             (cond
               (< d t)                         [(inc in) i]
               (< (quot max-int (- base t)) w) nil
-              :else                           (recur (inc in) i (* w (- base t)) (+ k base)))))))))
+              :else                           (recur (inc in) i
+                                                     (* w (- base t))
+                                                     (+ k base)))))))))
 
 ;; RFC 3492, section 6.2
 (defn decode
@@ -87,9 +97,9 @@
     (when (every? #(< % 0x80) basic)
       (loop [out  basic
              in   (if (pos? delim) (inc delim) 0)
-             n    0x80
+             n    initial-n
              i    0
-             bias 72]
+             bias initial-bias]
         (if (< in (count cps))
           (when-let [[in' i'] (insertion cps in i bias)]
             (let [len  (inc (count out))
@@ -125,9 +135,9 @@
         basic (filterv #(< % 0x80) cps)
         b     (count basic)]
     (loop [out   (cond-> basic (pos? b) (conj 0x2D))
-           n     0x80
+           n     initial-n
            delta 0
-           bias  72
+           bias  initial-bias
            h     b]
       (if (< h (count cps))
         (let [m     (reduce min (filter #(<= n %) cps))

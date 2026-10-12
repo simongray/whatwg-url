@@ -4,12 +4,18 @@
 
   A host is the text of its serialization, e.g. \"127.0.0.1\" or
   \"[::1]\", as parse gives it. The functions that end in -report also give
-  the validation errors of the URL Standard, as keywords, when they're
-  given a vector of them to add to, and nil leaves them out."
+  the validation errors, as keywords: give them a vector to add the errors
+  to, or nil to leave them out."
   (:require [clojure.string :as str]
             [dk.simongray.whatwg-url.chars :as chars]
             [dk.simongray.whatwg-url.idna :as idna]
             [dk.simongray.whatwg-url.percent :as percent]))
+
+(defn ^:no-doc with-error
+  "The validation `errors` with the error `k` added, or nil when they
+  aren't collected."
+  [errors k]
+  (some-> errors (conj k)))
 
 ;; URL Standard, section 3.2
 (defn forbidden-host-code-point?
@@ -34,9 +40,9 @@
   (let [n (count s)]
     (loop [i 0]
       (cond
-        (== i n)                  false
+        (== i n)                   false
         (pred (chars/code-at s i)) true
-        :else                     (recur (inc i))))))
+        :else                      (recur (inc i))))))
 
 ;; URL Standard, section 3.5, the IPv4 number parser
 (defn ^:no-doc ipv4-number
@@ -50,8 +56,9 @@
                         (and (<= 2 n) (= "0" (subs s 0 1)))        [8 1]
                         :else                                      [10 0])
         digit         (fn [c]
-                        (let [v (if (chars/ascii-hex-digit? c) (chars/hex-value c) 99)]
-                          (when (< v radix) v)))]
+                        (when (chars/ascii-hex-digit? c)
+                          (let [v (chars/hex-value c)]
+                            (when (< v radix) v))))]
     (when (pos? n)
       (loop [i start v 0]
         (if (< i n)
@@ -69,36 +76,40 @@
     (boolean (or (and (seq last) (not (has? #(not (chars/ascii-digit? %)) last)))
                  (ipv4-number last)))))
 
+(defn- power-of-256
+  "256 to the power of `k`."
+  [k]
+  (reduce * (repeat k 256)))
+
 ;; URL Standard, section 3.5, the IPv4 parser
 (defn ipv4-report
   "The IPv4 address that the ASCII text `s` writes as a number, and
   `errors` with its validation errors added, as a pair. The address is nil
   when it doesn't read."
   [s errors]
-  (let [parts   (str/split s #"\." -1)
-        empty?  (= "" (peek parts))
-        errors  (cond-> errors empty? (some-> (conj :ipv4-empty-part)))
-        parts   (cond-> parts (and empty? (< 1 (count parts))) pop)
-        errors  (cond-> errors (< (count parts) 4) (some-> (conj :ipv4-too-few-parts)))
-        numbers (map ipv4-number parts)]
+  (let [parts         (str/split s #"\." -1)
+        trailing-dot? (= "" (peek parts))
+        errors        (cond-> errors trailing-dot? (with-error :ipv4-empty-part))
+        parts         (cond-> parts (and trailing-dot? (< 1 (count parts))) pop)
+        errors        (cond-> errors (< (count parts) 4) (with-error :ipv4-too-few-parts))
+        numbers       (map ipv4-number parts)]
     (cond
       (< 4 (count parts))
-      [nil (some-> errors (conj :ipv4-too-many-parts))]
+      [nil (with-error errors :ipv4-too-many-parts)]
 
       (some nil? numbers)
-      [nil (some-> errors (conj :ipv4-non-numeric-part))]
+      [nil (with-error errors :ipv4-non-numeric-part)]
 
       :else
       (let [values (mapv first numbers)
             errors (cond-> errors
-                     (some second numbers)     (some-> (conj :ipv4-non-decimal-part))
-                     (some #(< 255 %) values)  (some-> (conj :ipv4-out-of-range-part)))
-            limit  (reduce * (repeat (- 5 (count values)) 256))]
+                     (some second numbers)    (with-error :ipv4-non-decimal-part)
+                     (some #(< 255 %) values) (with-error :ipv4-out-of-range-part))]
         (if (or (some #(< 255 %) (pop values))
-                (<= limit (peek values)))
+                (<= (power-of-256 (- 5 (count values))) (peek values)))
           [nil errors]
           [(reduce + (peek values)
-                   (map-indexed #(* %2 (reduce * (repeat (- 3 %1) 256))) (pop values)))
+                   (map-indexed #(* %2 (power-of-256 (- 3 %1))) (pop values)))
            errors])))))
 
 (defn ipv4
@@ -130,12 +141,12 @@
       (if (== -1 (c p))
         (if (== 4 seen)
           [address errors]
-          [nil (some-> errors (conj :ipv4-in-ipv6-too-few-parts))])
+          [nil (with-error errors :ipv4-in-ipv6-too-few-parts)])
         (let [p (if (pos? seen)
                   (when (and (== 0x2E (c p)) (< seen 4)) (inc p))
                   p)]
           (if (or (nil? p) (not (chars/ascii-digit? (c p))))
-            [nil (some-> errors (conj :ipv4-in-ipv6-invalid-code-point))]
+            [nil (with-error errors :ipv4-in-ipv6-invalid-code-point)]
             (let [[value p failure]
                   (loop [value nil p p]
                     (if (chars/ascii-digit? (c p))
@@ -148,7 +159,7 @@
                           :else         (recur (+ (* value 10) d) (inc p))))
                       [value p nil]))]
               (if failure
-                [nil (some-> errors (conj failure))]
+                [nil (with-error errors failure)]
                 (let [seen (inc seen)]
                   (recur (update address piece #(+ (* % 0x100) value))
                          (cond-> piece (#{2 4} seen) inc)
@@ -176,7 +187,7 @@
   (let [n (count s)
         c #(if (< % n) (chars/code-at s %) -1)]
     (if (and (== 0x3A (c 0)) (not= 0x3A (c 1)))
-      [nil (some-> errors (conj :ipv6-invalid-compression))]
+      [nil (with-error errors :ipv6-invalid-compression)]
       (loop [address  [0 0 0 0 0 0 0 0]
              p        (if (== 0x3A (c 0)) 2 0)
              piece    (if (== 0x3A (c 0)) 1 0)
@@ -185,16 +196,16 @@
         (cond
           (== -1 (c p))
           (cond
-            compress    [(compressed address piece compress) errors]
+            compress     [(compressed address piece compress) errors]
             (== 8 piece) [address errors]
-            :else       [nil (some-> errors (conj :ipv6-too-few-pieces))])
+            :else        [nil (with-error errors :ipv6-too-few-pieces)])
 
           (== 8 piece)
-          [nil (some-> errors (conj :ipv6-too-many-pieces))]
+          [nil (with-error errors :ipv6-too-many-pieces)]
 
           (== 0x3A (c p))
           (if compress
-            [nil (some-> errors (conj :ipv6-multiple-compression))]
+            [nil (with-error errors :ipv6-multiple-compression)]
             (recur address (inc p) (inc piece) (inc piece) errors))
 
           :else
@@ -206,15 +217,15 @@
                 q      (+ p length)
                 errors (cond-> errors
                          (and (< 1 length) (< value (bit-shift-left 1 (* 4 (dec length)))))
-                         (some-> (conj :ipv6-piece-leading-zero)))]
+                         (with-error :ipv6-piece-leading-zero))]
             (cond
               (== 0x2E (c q))
               (cond
                 (zero? length)
-                [nil (some-> errors (conj :ipv4-in-ipv6-invalid-code-point))]
+                [nil (with-error errors :ipv4-in-ipv6-invalid-code-point)]
 
                 (< 6 piece)
-                [nil (some-> errors (conj :ipv4-in-ipv6-too-many-pieces))]
+                [nil (with-error errors :ipv4-in-ipv6-too-many-pieces)]
 
                 :else
                 (let [[address errors] (ipv4-in-ipv6 address piece s p errors)]
@@ -222,13 +233,13 @@
                     (nil? address) [nil errors]
                     compress       [(compressed address (+ piece 2) compress) errors]
                     (== 6 piece)   [address errors]
-                    :else          [nil (some-> errors (conj :ipv6-too-few-pieces))])))
+                    :else          [nil (with-error errors :ipv6-too-few-pieces)])))
 
               (and (== 0x3A (c q)) (== -1 (c (inc q))))
-              [nil (some-> errors (conj :ipv6-invalid-code-point))]
+              [nil (with-error errors :ipv6-invalid-code-point)]
 
               (and (not= 0x3A (c q)) (not= -1 (c q)))
-              [nil (some-> errors (conj :ipv6-invalid-code-point))]
+              [nil (with-error errors :ipv6-invalid-code-point)]
 
               :else
               (recur (assoc address piece value)
@@ -278,10 +289,10 @@
   errors added, as a pair."
   [s errors]
   (if (has? forbidden-host-code-point? s)
-    [nil (some-> errors (conj :host-invalid-code-point))]
+    [nil (with-error errors :host-invalid-code-point)]
     [(percent/encode s percent/c0-control-set)
      (cond-> errors
-       (not (percent/url-units? s 0 (count s))) (some-> (conj :invalid-url-unit)))]))
+       (not (percent/url-units? s 0 (count s))) (with-error :invalid-url-unit))]))
 
 (def strict-options
   "The flags of UTS #46 that the URL Standard's domain parser gives
@@ -298,11 +309,11 @@
   convert, and when `strict?`, it must also be one that DNS allows."
   [domain strict? errors]
   (let [strict-result (when (or strict? errors) (idna/to-ascii domain strict-options))
-        errors        (cond-> errors (nil? strict-result) (some-> (conj :domain-to-ascii)))
+        errors        (cond-> errors (nil? strict-result) (with-error :domain-to-ascii))
         result        (cond
-                        strict?              strict-result
+                        strict?               strict-result
                         (chars/ascii? domain) (chars/lower-case domain)
-                        :else                (idna/to-ascii domain))]
+                        :else                 (idna/to-ascii domain))]
     [(when (and (seq result) (not (has? forbidden-domain-code-point? result)))
        result)
      errors]))
@@ -350,26 +361,26 @@
     (if (str/ends-with? s "]")
       (let [[pieces errors] (ipv6-report (subs s 1 (dec (count s))) errors)]
         [(some->> pieces serialize-ipv6 (#(str "[" % "]"))) errors])
-      [nil (some-> errors (conj :ipv6-unclosed))])
+      [nil (with-error errors :ipv6-unclosed)])
 
     opaque?
     (opaque-report s errors)
 
     :else
-    (let [errors          (cond-> errors
-                            (and errors
-                                 (str/includes? s "%")
-                                 (some #(percent/percent-encoded-byte-at? s %) (range (count s))))
-                            (conj :domain-percent-encoded))
-          domain          (percent/decode s)
-          [ascii errors]  (domain-report domain false errors)]
+    (let [errors         (cond-> errors
+                           (and errors
+                                (str/includes? s "%")
+                                (some #(percent/percent-encoded-byte-at? s %) (range (count s))))
+                           (with-error :domain-percent-encoded))
+          domain         (percent/decode s)
+          [ascii errors] (domain-report domain false errors)]
       (cond
         (nil? ascii)
         [nil errors]
 
         (ends-in-a-number? ascii)
         (let [errors     (cond-> errors
-                           (not (chars/ascii? domain)) (some-> (conj :ipv4-non-ascii-input)))
+                           (not (chars/ascii? domain)) (with-error :ipv4-non-ascii-input))
               [n errors] (ipv4-report ascii errors)]
           [(some-> n serialize-ipv4) errors])
 
@@ -442,8 +453,8 @@
 ;; URL Standard, section 3.2
 (defn public-suffix
   "The public suffix of the domain `host` by the `rules` of suffix-rules,
-  e.g. com or github.io, or nil when the host isn't a domain. A domain
-  that no rule has is its own public suffix's last label.
+  e.g. com or github.io, or nil when the host isn't a domain. When no rule
+  matches, it's the last label of the host.
 
       (public-suffix \"whatwg.github.io\" rules)
       ;; => \"github.io\""

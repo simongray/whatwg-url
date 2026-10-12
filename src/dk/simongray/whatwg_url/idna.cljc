@@ -16,14 +16,18 @@
   Unicode ToASCII when it isn't strict, and that its domain to Unicode
   gives Unicode ToUnicode:
 
-  - :check-hyphens?, which refuses a hyphen at the start or the end of a
+  - :check-hyphens?, true to refuse a hyphen at the start or the end of a
     label, or in its third and fourth place
-  - :check-bidi?, the rules of RFC 5893 for right-to-left labels
-  - :check-joiners?, the CONTEXTJ rules of RFC 5892 for U+200C and U+200D
-  - :use-std3-ascii-rules?, which allows only a-z, 0-9 and - of ASCII
-  - :transitional?, the deprecated mapping of ß, ς, U+200C and U+200D
-  - :verify-dns-length?, the lengths of DNS, and no empty label
-  - :ignore-invalid-punycode?, which keeps a label of xn-- that doesn't
+  - :check-bidi?, true to check right-to-left labels by the rules of
+    RFC 5893
+  - :check-joiners?, true to check U+200C and U+200D by the CONTEXTJ
+    rules of RFC 5892
+  - :use-std3-ascii-rules?, true to allow only a-z, 0-9 and - of ASCII
+  - :transitional?, true for the deprecated mapping of ß, ς, U+200C and
+    U+200D
+  - :verify-dns-length?, true to check the lengths that DNS allows, with
+    no empty label
+  - :ignore-invalid-punycode?, true to keep a label of xn-- that doesn't
     decode as it is"
   {:check-hyphens?           false
    :check-bidi?              true
@@ -156,8 +160,9 @@
   ([domain opts]
    (let [{:keys [check-bidi? transitional?] :as opts} (merge default-options opts)
          s       (mapped domain transitional?)
-         known?  (or (chars/ascii? s) (unicode/known? s))
-         s       (if (chars/ascii? s) s (unicode/nfc s))
+         ascii?  (chars/ascii? s)
+         known?  (or ascii? (unicode/known? s))
+         s       (if ascii? s (unicode/nfc s))
          results (map #(converted % opts) (str/split s #"\." -1))
          labels  (map first results)]
      {:domain (str/join "." labels)
@@ -185,8 +190,7 @@
   ([domain]
    (to-ascii domain {}))
   ([domain opts]
-   (let [opts                    (merge default-options opts)
-         {:keys [domain error?]} (process domain opts)
+   (let [{:keys [domain error?]} (process domain opts)
          labels                  (map #(if (chars/ascii? %)
                                          %
                                          (some->> (punycode/encode %) (str "xn--")))

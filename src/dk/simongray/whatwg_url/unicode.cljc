@@ -1,17 +1,16 @@
-(ns dk.simongray.whatwg-url.unicode
+(ns ^:no-doc dk.simongray.whatwg-url.unicode
   "The properties of Unicode 18.0.0 that IDNA needs: the IDNA mapping
   table of UTS #46, the bidi classes, the joining types, the marks and the
   viramas, and the platform's NFC.
 
-  The tables in resources are made by dev/dk/simongray/whatwg_url/tables.clj from
-  the Unicode Character Database. ClojureScript carries them as strings,
-  which are read on first use.
+  The tables in resources are made by dev/dk/simongray/whatwg_url/tables.clj
+  from the Unicode Character Database, and are read on first use.
 
   The platform normalizes to NFC, by the version of Unicode it has. NFC
   doesn't change for the code points a version has, so it's the NFC of
   Unicode 18.0.0 unless the text has a code point the platform doesn't
   have, which known? tells."
-  #?(:cljs (:require-macros [dk.simongray.whatwg-url.unicode :refer [resource]]))
+  #?(:cljs (:require-macros [dk.simongray.whatwg-url.unicode :refer [table-text]]))
   (:require [clojure.string :as str]
             #?(:clj [clojure.java.io :as io])
             [dk.simongray.whatwg-url.chars :as chars])
@@ -20,36 +19,39 @@
 #?(:clj
    ;; ClojureScript carries the table as a string literal, which the JVM
    ;; can't, as a constant is at most 64 KB there
-   (defmacro ^:no-doc resource
-     "The text of the table `name` in resources."
+   (defmacro table-text
+     "The text of the table `name` in resources, as a string literal in
+     ClojureScript, and read when it's evaluated on the JVM."
      [name]
-     (slurp (io/resource (str "dk/simongray/whatwg_url/" name)))))
+     (let [path (str "dk/simongray/whatwg_url/" name)]
+       (if (:ns &env)
+         (slurp (io/resource path))
+         `(slurp (io/resource ~path))))))
 
-#?(:clj
-   (defn- table-text
-     "The text of the table `name` in resources."
-     [name]
-     (slurp (io/resource (str "dk/simongray/whatwg_url/" name)))))
+(defn- base-36
+  "The number that the text `s` writes in base 36."
+  [s]
+  #?(:clj (Long/parseLong s 36) :cljs (js/parseInt s 36)))
 
-(defn ^:no-doc read-table
+(defn read-table
   "The runs of the `text` of a table, as a vector of the first code points,
-  a vector of the last code points and a vector of the values that `f`
-  gives the value of each run."
+  a vector of the last code points and a vector of what `f` gives for the
+  value of each run."
   [text f]
-  (loop [lines (rest (str/split-lines text))
-         end   0
+  (loop [lines  (rest (str/split-lines text))
+         end    0
          firsts (transient [])
          lasts  (transient [])
          values (transient [])]
     (if-let [line (first lines)]
       (let [[gap n v] (str/split line #" ")
-            a         (+ end #?(:clj (Long/parseLong gap 36) :cljs (js/parseInt gap 36)))
-            b         (+ a -1 #?(:clj (Long/parseLong n 36) :cljs (js/parseInt n 36)))]
+            a         (+ end (base-36 gap))
+            b         (+ a -1 (base-36 n))]
         (recur (rest lines) (inc b)
                (conj! firsts a) (conj! lasts b) (conj! values (f v))))
       [(persistent! firsts) (persistent! lasts) (persistent! values)])))
 
-(defn ^:no-doc lookup
+(defn lookup
   "The value of the code point `c` in the `table` that read-table gives, or
   nil when no run has it."
   [[firsts lasts values] ^long c]
@@ -66,9 +68,7 @@
   [s]
   (if (= "" s)
     ""
-    (chars/from-code-points
-     (map #?(:clj #(Long/parseLong % 36) :cljs #(js/parseInt % 36))
-          (str/split s #"\.")))))
+    (chars/from-code-points (map base-36 (str/split s #"\.")))))
 
 (defn- idna-value
   "The status and mapping of the value `v` of the IDNA table."
@@ -78,12 +78,11 @@
     "i" [:ignored ""]
     "d" [:deviation (sequence-value (subs v 1))]
     "s" [:mapped (sequence-value (subs v 1))]
-    "m" [:mapped #?(:clj (Long/parseLong (subs v 1) 36) :cljs (js/parseInt (subs v 1) 36))]))
+    "m" [:mapped (base-36 (subs v 1))]))
 
-(def ^:no-doc idna-table
+(def idna-table
   "The IDNA mapping table of UTS #46, read on first use."
-  (delay (read-table #?(:clj (table-text "idna.txt") :cljs (resource "idna.txt"))
-                     idna-value)))
+  (delay (read-table (table-text "idna.txt") idna-value)))
 
 (defn idna-status
   "The status of the code point `c` by the IDNA mapping table, and its
@@ -95,20 +94,18 @@
     [status (if (number? m) (chars/from-code-points [(+ c (long m))]) m)]
     [:disallowed]))
 
-(def ^:no-doc bidi-table
+(def bidi-table
   "The bidi classes other than L, read on first use."
-  (delay (read-table #?(:clj (table-text "bidi.txt") :cljs (resource "bidi.txt"))
-                     keyword)))
+  (delay (read-table (table-text "bidi.txt") keyword)))
 
 (defn bidi-class
   "The bidi class of the code point `c` as a keyword, e.g. :L or :AL."
   [c]
   (or (lookup @bidi-table c) :L))
 
-(def ^:no-doc joining-table
+(def joining-table
   "The joining types L, D, R and T, read on first use."
-  (delay (read-table #?(:clj (table-text "joining.txt") :cljs (resource "joining.txt"))
-                     keyword)))
+  (delay (read-table (table-text "joining.txt") keyword)))
 
 (defn joining-type
   "The joining type of the code point `c`, :L, :D, :R or :T, or nil for
@@ -116,10 +113,9 @@
   [c]
   (lookup @joining-table c))
 
-(def ^:no-doc mark-table
+(def mark-table
   "The code points of the general category Mark, read on first use."
-  (delay (read-table #?(:clj (table-text "marks.txt") :cljs (resource "marks.txt"))
-                     (constantly true))))
+  (delay (read-table (table-text "marks.txt") (constantly true))))
 
 (defn mark?
   "Whether the code point `c` is a mark, of the general category Mn, Mc or
@@ -127,11 +123,10 @@
   [c]
   (some? (lookup @mark-table c)))
 
-(def ^:no-doc virama-table
+(def virama-table
   "The code points of the canonical combining class Virama, read on first
   use."
-  (delay (read-table #?(:clj (table-text "virama.txt") :cljs (resource "virama.txt"))
-                     (constantly true))))
+  (delay (read-table (table-text "virama.txt") (constantly true))))
 
 (defn virama?
   "Whether the code point `c` has the canonical combining class Virama."
@@ -139,13 +134,14 @@
   (some? (lookup @virama-table c)))
 
 #?(:cljs
-   (def ^:no-doc unassigned
+   (def unassigned
      "The code points that the JavaScript engine doesn't have."
      (js/RegExp. "\\p{Cn}" "u")))
 
 (defn known?
-  "Whether the platform has each code point of the text `s` in its version
-  of Unicode, or has it as unassigned in Unicode 18.0.0 too."
+  "Whether the platform's Unicode has each code point of the text `s`,
+  leaving out those that the IDNA table disallows, which make a domain
+  fail anyway."
   [s]
   #?(:clj  (every? #(or (Character/isDefined (int %))
                         (= [:disallowed] (idna-status %)))

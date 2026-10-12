@@ -1,6 +1,8 @@
 whatwg-url
 ==========
 
+[![Clojars Project](https://img.shields.io/clojars/v/dk.simongray/whatwg-url.svg)](https://clojars.org/dk.simongray/whatwg-url)
+
 This is a Clojure and ClojureScript implementation of the
 [WHATWG URL Standard](https://url.spec.whatwg.org/), which says how
 browsers parse, resolve, write and compare URLs. URLs are plain maps.
@@ -10,7 +12,8 @@ browsers parse, resolve, write and compare URLs. URLs are plain maps.
   `http://0x7f.1/` is 127.0.0.1.
 - **The whole standard.** Hosts with IPv4 numbers in any base, IPv6 and
   IDNA, the percent-encode sets, origins, the setters of the URL class,
-  the query strings of forms, and public suffixes.
+  the query strings of forms, and public suffixes. A query is encoded in
+  UTF-8 only, not in the legacy encodings that HTML gives some documents.
 - **Validation errors as data.** A URL that parses can still be invalid,
   and you can ask why.
 
@@ -18,15 +21,31 @@ The same code runs on the JVM, in Node and in the browser, with the same
 results on each. There are no dependencies but Clojure, and it passes the
 URL tests of [web-platform-tests](https://github.com/web-platform-tests/wpt/tree/master/url).
 
+> This library brings together the URL code of
+> [wary-fetch](https://github.com/simongray/wary-fetch),
+> [html-pieces](https://github.com/simongray/html-pieces) and
+> [microformats-clj](https://github.com/simongray/microformats-clj), which
+> had each implemented a part of the URL Standard. Like them, it was
+> developed with assistance from frontier LLMs.
+
 Getting started
 ---------------
 
-The library requires Clojure 1.11+ and Java 11+. Add it to the `:deps` in
-your `deps.edn`:
+The library requires Clojure 1.11+ and Java 11+. For the latest release,
+add it from [Clojars](https://clojars.org/dk.simongray/whatwg-url) to the
+`:deps` in your `deps.edn`:
 
 ```clojure
-dk.simongray/whatwg-url {:git/url "https://github.com/simongray/whatwg-url"
-                         :git/sha "…"}
+dk.simongray/whatwg-url {:mvn/version "0.1.0"}
+```
+
+For changes that aren't released yet, use the SHA of the latest commit on
+`master` instead:
+
+```clojure
+dk.simongray/whatwg-url
+{:git/url "https://github.com/simongray/whatwg-url"
+ :git/sha "…"}
 ```
 
 For ClojureScript, shadow-cljs only reads Git dependencies from
@@ -66,16 +85,13 @@ To resolve a link against the URL of its page, as a browser does, use
 ;; => "https://example.com/about"
 ```
 
-To resolve many links against the same page, e.g. all the links of a
-page, make a resolver, which parses the page's URL only once:
+To resolve many links against the same page, make a resolver, which
+parses the page's URL only once:
 
 ```clojure
 (map (url/resolver "https://example.com/blog/post") ["a" "/b" "https://x.example"])
 ;; => ("https://example.com/blog/a" "https://example.com/b" "https://x.example/")
 ```
-
-A link that's already written the way the parser would write it, as most
-links are, is given back without parsing it.
 
 The URL class
 -------------
@@ -96,7 +112,7 @@ that `host` is the host and port, as in the URL class, while the `:host`
 of the map is the host alone.
 
 To change a URL, give `url/with` the attributes to set, in order. Each is
-set as the URL class's setter sets it, which encodes what needs it, so
+set as the URL class's setter sets it, percent-encoding what needs it, so
 it's also the way to build a URL from parts:
 
 ```clojure
@@ -106,8 +122,8 @@ it's also the way to build a URL from parts:
 ;; => "https://api.example.com/v1/search?q=clojure+podcasts&page=2"
 ```
 
-A value that the setter refuses leaves the URL as it is, as a hostname
-with a port does. To change an attribute by a function of its value, as
+A value that the setter refuses, e.g. a hostname with a port, leaves the
+URL as it is. To change an attribute by a function of its value, as
 `clojure.core/update` does, use `url/update`:
 
 ```clojure
@@ -117,9 +133,9 @@ with a port does. To change an attribute by a function of its value, as
 ;; => "https://example.com/?q=a&page=2"
 ```
 
-Other functions compare URLs: `url/origin` and `url/same-origin?`,
-`url/equivalent?`, and `url/path-starts-with?` for a path that holds
-another, as cookies use it.
+To compare URLs, use `url/same-origin?`, `url/equivalent?`, and
+`url/path-starts-with?` for a path that holds another, as cookies compare
+paths.
 
 Query strings and forms
 -----------------------
@@ -144,8 +160,8 @@ It also has the methods of the standard's URLSearchParams class, e.g.
 Hosts
 -----
 
-The `dk.simongray.whatwg-url.hosts` namespace parses hosts as the parser does,
-and has the steps on their own:
+The `dk.simongray.whatwg-url.hosts` namespace parses hosts as the URL
+parser does, and has each of its steps as a function:
 
 ```clojure
 (require '[dk.simongray.whatwg-url.hosts :as hosts])
@@ -183,8 +199,8 @@ IDNA and Unicode
 
 A domain outside ASCII is converted by
 [UTS #46](https://www.unicode.org/reports/tr46/) of Unicode 18.0.0, whose
-tables the library carries. The `dk.simongray.whatwg-url.idna` namespace has
-`to-ascii` and `to-unicode` with each flag of UTS #46, and
+tables the library carries. The `dk.simongray.whatwg-url.idna` namespace
+has `to-ascii` and `to-unicode` with each flag of UTS #46, and
 `dk.simongray.whatwg-url.punycode` has Punycode.
 
 The normalization to NFC is the platform's, i.e. that of the JDK or of
@@ -210,9 +226,6 @@ Principles
 - **One codebase.** The library is written in `.cljc` and behaves the
   same everywhere.
 
-The library doesn't encode a query in the legacy encodings that HTML
-gives the parser for some documents, only in UTF-8.
-
 Development
 -----------
 
@@ -237,6 +250,6 @@ and UTF-8.
 License
 -------
 
-The whatwg-url project is licensed under the [MIT licence](LICENSE). The tables
-in `resources/` are made from the Unicode Character Database, under the
-[Unicode License v3](https://www.unicode.org/license.txt).
+The whatwg-url project is licensed under the [MIT licence](LICENSE). The
+tables in `resources/` are made from the Unicode Character Database,
+under the [Unicode License v3](https://www.unicode.org/license.txt).

@@ -1,4 +1,4 @@
-(ns dk.simongray.whatwg-url.chars
+(ns ^:no-doc dk.simongray.whatwg-url.chars
   "Code points, the classes of ASCII that the URL Standard names, and the
   bytes of UTF-8, the same way on both platforms.
 
@@ -71,10 +71,9 @@
   [s]
   (let [n (count s)]
     (if (loop [i 0]
-          (cond
-            (== i n)                             true
-            (surrogate? (code-point-at s i))     false
-            :else                                (recur (+ i (width (code-point-at s i))))))
+          (or (== i n)
+              (let [c (code-point-at s i)]
+                (and (not (surrogate? c)) (recur (+ i (width c)))))))
       s
       (let [b (builder)]
         (loop [i 0]
@@ -90,7 +89,7 @@
   (let [n (count s)]
     (loop [i 0]
       (cond
-        (== i n)              true
+        (== i n)               true
         (< 0x7F (code-at s i)) false
         :else                  (recur (inc i))))))
 

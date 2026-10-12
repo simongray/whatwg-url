@@ -1,4 +1,4 @@
-(ns dk.simongray.whatwg-url.parser
+(ns ^:no-doc dk.simongray.whatwg-url.parser
   "The basic URL parser of the URL Standard, section 4.4, as a state
   machine whose states each read a run of the input rather than a code
   point at a time.
@@ -9,11 +9,15 @@
   :path is a vector of segments, or a string for an opaque path, e.g. that
   of mailto:me@example.com.
 
-  Each state is a function of the parse, a map of the :input, the pointer
-  :i, the :url so far, the :base, the :override state of a setter and the
-  :errors, which gives the parse of the next state, the :done or the
-  :failure. The :errors are a vector of the validation errors when they're
-  asked for, and nil otherwise.
+  Each state is a function of the parse, which gives the parse of the
+  next state. The parse is a map of:
+
+  - :input, the text, and :i, the pointer into it
+  - :url, the URL so far, and :base, the URL to resolve against
+  - :override, the state that a setter starts in
+  - :errors, a vector of the validation errors when they're asked for,
+    and nil otherwise
+  - :state, the state to run next, or :done or :failure
 
   TODO: the encodings other than UTF-8 that HTML gives the parser for the
   query of a document in a legacy encoding."
@@ -72,8 +76,7 @@
   (special? (:scheme (:url parse))))
 
 (defn- slash?
-  "Whether `x` is a slash of a URL that's `special`: / or, when it's
-  special, \\."
+  "Whether `x` is /, or \\ in a URL that's `special`."
   [special ^long x]
   (or (== x 0x2F) (and (== x 0x5C) special)))
 
@@ -111,6 +114,11 @@
    (assoc parse :state :failure))
   ([parse k]
    (failure (error parse k))))
+
+(defn- failed?
+  "Whether the `parse` has failed."
+  [parse]
+  (= :failure (:state parse)))
 
 (defn- url-units
   "The `parse` with an invalid-url-unit error when the input from `start`
@@ -372,7 +380,7 @@
           (= :hostname override) (failure parse)
           :else                  (let [parse (with-host parse buffer)]
                                    (cond-> parse
-                                     (not= :failure (:state parse)) (go :port (inc j)))))
+                                     (not (failed? parse)) (go :port (inc j)))))
 
         (and special (= "" buffer))
         (failure parse :host-missing)
@@ -383,9 +391,9 @@
         :else
         (let [parse (with-host parse buffer)]
           (cond
-            (= :failure (:state parse)) parse
-            override                    (done parse)
-            :else                       (go parse :path-start j)))))))
+            (failed? parse) parse
+            override        (done parse)
+            :else           (go parse :path-start j)))))))
 
 (defn- port-number
   "The number of the ASCII `digits`, or 65536 when it's greater than that."
@@ -488,7 +496,7 @@
 
       :else
       (let [parse (with-host parse buffer)]
-        (if (= :failure (:state parse))
+        (if (failed? parse)
           parse
           (let [parse (cond-> parse
                         (= "localhost" (:host (:url parse))) (assoc-in [:url :host] ""))]
@@ -628,6 +636,11 @@
    :query                            query
    :fragment                         fragment})
 
+(defn- tab-or-line-break?
+  "Whether the code `x` is a tab or a line break."
+  [^long x]
+  (or (== x 0x09) (== x 0x0A) (== x 0x0D)))
+
 (defn- clean?
   "Whether the `input` of a parse has no tab or line break, and when
   `trim?` no C0 control or space at its ends."
@@ -639,9 +652,9 @@
                   (< 0x20 (chars/code-at input (dec n)))))
          (loop [i 0]
            (cond
-             (== i n) true
-             (let [x (chars/code-at input i)] (or (== x 0x09) (== x 0x0A) (== x 0x0D))) false
-             :else (recur (inc i)))))))
+             (== i n)                                     true
+             (tab-or-line-break? (chars/code-at input i)) false
+             :else                                        (recur (inc i)))))))
 
 (defn- cleaned
   "The `input` of a parse with its tabs and line breaks removed, and when
@@ -655,8 +668,8 @@
                     input)
           clean   (str/replace trimmed #"[\t\n\r]" "")]
       [clean (cond-> errors
-               (not= input trimmed) (some-> (conj :invalid-url-unit))
-               (not= trimmed clean) (some-> (conj :invalid-url-unit)))])))
+               (not= input trimmed) (hosts/with-error :invalid-url-unit)
+               (not= trimmed clean) (hosts/with-error :invalid-url-unit))])))
 
 (defn run
   "The parse of the text `input` by the basic URL parser, with `opts`:

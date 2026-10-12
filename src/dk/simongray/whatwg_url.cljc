@@ -28,16 +28,22 @@
             [dk.simongray.whatwg-url.parser :as parser]
             [dk.simongray.whatwg-url.percent :as percent]))
 
+(defn- basic-parse
+  "The URL that the basic URL parser gives for the text `s` against the
+  URL map `base`, or nil."
+  [s base]
+  (let [{:keys [state url]} (parser/run (str s) {:base base})]
+    (when (= :done state)
+      url)))
+
 (defn- base-url
   "The URL `base` to resolve against, parsed when it's text, nil when
   there's none, or ::invalid when it doesn't parse."
   [base]
   (cond
-    (nil? base)  nil
-    (map? base)  base
-    :else        (or (:url (let [p (parser/run (str base) {})]
-                             (when (= :done (:state p)) p)))
-                     ::invalid)))
+    (nil? base) nil
+    (map? base) base
+    :else       (or (basic-parse base nil) ::invalid)))
 
 ;; a map of at most eight keys keeps them in the order they're added
 (defn- in-order
@@ -61,9 +67,7 @@
   ([s base]
    (let [base (base-url base)]
      (when-not (= ::invalid base)
-       (let [{:keys [state url]} (parser/run (str s) {:base base})]
-         (when (= :done state)
-           (in-order url)))))))
+       (some-> (basic-parse s base) in-order)))))
 
 (defn- ->url
   "The `url`, parsed when it's text."
@@ -231,7 +235,7 @@
   "Whether the `url` has a special scheme: ftp, file, http, https, ws or
   wss."
   [url]
-  (some-> (->url url) :scheme parser/special?))
+  (boolean (some-> (->url url) :scheme parser/special?)))
 
 ;; URL Standard, section 4.7
 (defn- origin-tuple
@@ -306,13 +310,14 @@
   (some-> (->url url) (:password "")))
 
 (defn hostname
-  "The host of the `url`, or an empty string, e.g. example.com."
+  "The host of the `url`, e.g. example.com, or an empty string when it has
+  none."
   [url]
   (some-> (->url url) (:host "")))
 
 (defn port
-  "The port of the `url` as text, or an empty string when it has none, as
-  when it's the default of the scheme."
+  "The port of the `url` as text, e.g. 8443, or an empty string when it's
+  the scheme's default or there's none."
   [url]
   (some-> (->url url) (:port "") str))
 
@@ -370,6 +375,11 @@
     (dissoc url k)
     (with-parse (assoc url k "") state (cond-> v (str/starts-with? v delimiter) (subs 1)))))
 
+(defn- no-attribute
+  "The exception for the attribute `k`, which the URL class doesn't have."
+  [k]
+  (ex-info (str "The URL class has no attribute " k) {:attribute k}))
+
 (defn- set-attribute
   "The `url` with the attribute `k` set to the text `v`, as its setter in
   the URL class sets it."
@@ -389,7 +399,7 @@
       :pathname (if opaque? url (with-parse (assoc url :path []) :path-start v))
       :search   (with-part url :query :query "?" v)
       :hash     (with-part url :fragment :fragment "#" v)
-      (throw (ex-info (str "The URL class has no attribute " k) {:attribute k})))))
+      (throw (no-attribute k)))))
 
 (defn with
   "The `url` with each attribute `k` set to its value `v`, in order, as
@@ -426,7 +436,7 @@
     :search        (search url)
     :hash          (hash url)
     :search-params (search-params url)
-    (throw (ex-info (str "The URL class has no attribute " k) {:attribute k}))))
+    (throw (no-attribute k))))
 
 (defn update
   "The `url` with the attribute `k` set to what `f` gives for its value and

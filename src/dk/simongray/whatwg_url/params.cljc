@@ -3,10 +3,10 @@
   query of a URL and the body of a form hold, by the URL Standard, section
   5, with the operations of URLSearchParams of section 6.2.
 
-  The pairs are a vector of name-value vectors, in order, a name that comes
-  twice twice. Each function also takes a map or any other seq of pairs,
-  e.g. {:q \"clojure\" :page 2}, and reads a keyword as its name without
-  the colon and any other value as its text."
+  The pairs are a vector of name-value vectors in order, and a name can
+  come more than once. Each function also takes a map or any other seq of
+  pairs, e.g. {:q \"clojure\" :page 2}, and reads a keyword as its name,
+  e.g. :q as q, and any other value as its text."
   (:refer-clojure :exclude [get set sort])
   (:require [clojure.string :as str]
             [dk.simongray.whatwg-url.chars :as chars]
@@ -44,12 +44,12 @@
       (serialize {:q \"clojure podcasts\" :page 2})
       ;; => \"q=clojure+podcasts&page=2\""
   [pairs]
-  (->> (for [[k v] pairs
-             :when (some? v)]
-         (str (percent/encode (chars/scalar-values (text k)) percent/form-urlencoded-set)
-              "="
-              (percent/encode (chars/scalar-values (text v)) percent/form-urlencoded-set)))
-       (str/join "&")))
+  (let [encode #(percent/encode (chars/scalar-values (text %))
+                                percent/form-urlencoded-set)]
+    (->> (for [[k v] pairs
+               :when (some? v)]
+           (str (encode k) "=" (encode v)))
+         (str/join "&"))))
 
 (defn- named?
   "Whether the pair of `k` and `v` has the `name`, and the `value` when

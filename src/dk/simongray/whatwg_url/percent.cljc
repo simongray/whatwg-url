@@ -13,68 +13,56 @@
 
 (defn- encode-set
   "The percent-encode set of the C0 controls, the code points above U+007E
-  and the ASCII `codes`."
-  [codes]
+  and the ASCII characters of the text `s`."
+  [s]
   (let [^booleans table #?(:clj  (boolean-array 128)
                            :cljs (.fill (make-array 128) false))]
-    (doseq [c (concat (range 0x20) codes)]
+    (doseq [c (concat (range 0x20) (map #(chars/code-at s %) (range (count s))))]
       (aset table c true))
     (fn [^long c]
       (or (< 0x7E c) (aget table c)))))
 
+;; URL Standard, section 1.3, where each set holds the one before it
 (def c0-control-set
   "The C0 control percent-encode set."
-  (encode-set []))
+  (encode-set ""))
 
 (def fragment-set
   "The fragment percent-encode set."
-  (encode-set [0x20 0x22 0x3C 0x3E 0x60]))
+  (encode-set " \"<>`"))
 
 (def query-set
   "The query percent-encode set."
-  (encode-set [0x20 0x22 0x23 0x3C 0x3E]))
+  (encode-set " \"#<>"))
 
 (def special-query-set
   "The special-query percent-encode set, for the query of a URL with a
   special scheme, e.g. https."
-  (encode-set [0x20 0x22 0x23 0x3C 0x3E 0x27]))
+  (encode-set " \"#<>'"))
 
 (def path-set
   "The path percent-encode set."
-  (encode-set [0x20 0x22 0x23 0x3C 0x3E 0x3F 0x5E 0x60 0x7B 0x7D]))
+  (encode-set " \"#<>?^`{}"))
 
 (def userinfo-set
   "The userinfo percent-encode set."
-  (encode-set [0x20 0x22 0x23 0x3C 0x3E 0x3F 0x5E 0x60 0x7B 0x7D
-               0x2F 0x3A 0x3B 0x3D 0x40 0x5B 0x5C 0x5D 0x7C]))
+  (encode-set " \"#<>?^`{}/:;=@[\\]|"))
 
 (def component-set
   "The component percent-encode set, which gives what JavaScript's
   encodeURIComponent gives."
-  (encode-set [0x20 0x22 0x23 0x3C 0x3E 0x3F 0x5E 0x60 0x7B 0x7D
-               0x2F 0x3A 0x3B 0x3D 0x40 0x5B 0x5C 0x5D 0x7C
-               0x24 0x25 0x26 0x2B 0x2C]))
+  (encode-set " \"#<>?^`{}/:;=@[\\]|$%&+,"))
 
 (def form-urlencoded-set
   "The application/x-www-form-urlencoded percent-encode set, which leaves
   only the ASCII letters and digits and * - . _ as they are. Encoding by
   it makes a space a +."
-  (encode-set [0x20 0x22 0x23 0x3C 0x3E 0x3F 0x5E 0x60 0x7B 0x7D
-               0x2F 0x3A 0x3B 0x3D 0x40 0x5B 0x5C 0x5D 0x7C
-               0x24 0x25 0x26 0x2B 0x2C
-               0x21 0x27 0x28 0x29 0x7E]))
+  (encode-set " \"#<>?^`{}/:;=@[\\]|$%&+,!'()~"))
 
-(def ^:no-doc hex-digits
-  "The upper-case hex digits, by value."
-  "0123456789ABCDEF")
-
-(defn ^:no-doc append-byte!
-  "The `builder` with the byte `b` percent-encoded and appended, e.g. %C3."
-  [builder ^long b]
-  (-> builder
-      (chars/append! "%")
-      (chars/append! (subs hex-digits (bit-shift-right b 4) (inc (bit-shift-right b 4))))
-      (chars/append! (subs hex-digits (bit-and b 0xF) (inc (bit-and b 0xF))))))
+(def ^:no-doc escapes
+  "The percent-encoding of each byte, by its value, e.g. %C3 for 0xC3."
+  (let [hex "0123456789ABCDEF"]
+    (mapv #(str "%" (nth hex (quot % 16)) (nth hex (rem % 16))) (range 256))))
 
 (defn ^:no-doc encode-span
   "The code points of the text `s` from `start` to `end` with each one of
@@ -94,7 +82,8 @@
             (let [c (chars/code-point-at s i)]
               (cond
                 (and plus? (== c 0x20)) (chars/append! b "+")
-                (set c)                 (run! #(append-byte! b %) (chars/utf-8 c))
+                (set c)                 (run! #(chars/append! b (nth escapes %))
+                                              (chars/utf-8 c))
                 :else                   (chars/append-code-point! b c))
               (recur (+ i (chars/width c))))))
         (str b)))))
