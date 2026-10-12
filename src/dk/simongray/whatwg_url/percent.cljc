@@ -76,6 +76,16 @@
       (set (chars/code-at s i)) false
       :else                     (recur (inc i)))))
 
+(defn- append-encoded!
+  "The text builder `b` with the code point `c` appended, percent-encoded
+  as UTF-8 when the percent-encode `set` has it, or as a + when it's a
+  space and `plus?`."
+  [b set ^long c plus?]
+  (cond
+    (and plus? (== c 0x20)) (chars/append! b "+")
+    (set c)                 (reduce #(chars/append! %1 (nth escapes %2)) b (chars/utf-8 c))
+    :else                   (chars/append-code-point! b c)))
+
 (defn ^:no-doc encode-span
   "The code points of the text `s` from `start` to `end` with each one of
   the percent-encode `set` percent-encoded as UTF-8, a space as + when the
@@ -88,11 +98,7 @@
         (loop [i start]
           (when (< i end)
             (let [c (chars/code-point-at s i)]
-              (cond
-                (and plus? (== c 0x20)) (chars/append! b "+")
-                (set c)                 (run! #(chars/append! b (nth escapes %))
-                                              (chars/utf-8 c))
-                :else                   (chars/append-code-point! b c))
+              (append-encoded! b set c plus?)
               (recur (+ i (chars/width c))))))
         (str b)))))
 

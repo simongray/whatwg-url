@@ -11,6 +11,7 @@
   (:require #?@(:clj [[clj-async-profiler.core :as prof]
                       [criterium.core :as criterium]])
             [dk.simongray.whatwg-url :as url]
+            [dk.simongray.whatwg-url.hosts :as hosts]
             [dk.simongray.whatwg-url.params :as params]))
 
 (def page
@@ -28,6 +29,8 @@
      :relative #(url/resolve base "../images/photo.jpg")
      :idn      #(url/parse "https://bücher.example/")
      :ipv4     #(url/parse "http://0x7f.1/")
+     :ipv6     #(url/parse "http://[2001:db8:0:0:1:0:0:1]/")
+     :unicode  #(hosts/domain->unicode "xn--bcher-kva.xn--fa-hia.example")
      :href     #(url/href u)
      :errors   #(url/validation-errors "https://user@example.org/a b")
      :with     #(url/with page :pathname "/v1/search" :search-params {:q "clojure podcasts" :page 2})

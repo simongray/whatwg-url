@@ -56,6 +56,28 @@
          true)
        (not (and (== 0x2F before) (or (== 0x2E c) (== 0x25 c))))))
 
+(defn- host-slash
+  "The index of the / that ends a host of host-code? codes in the text `s`
+  from `start`, or nil when another code ends it."
+  [s ^long start]
+  (let [n (count s)]
+    (loop [i start]
+      (when (< i n)
+        (let [c (chars/code-at s i)]
+          (cond
+            (host-code? c) (recur (inc i))
+            (== 0x2F c)    i))))))
+
+(defn- normal-path?
+  "Whether the path, query and fragment of the text `s` from `start`, just
+  after a /, are all codes that path-code? takes."
+  [s ^long start]
+  (let [n (count s)]
+    (loop [i start before 0x2F]
+      (or (== i n)
+          (let [c (chars/code-at s i)]
+            (and (path-code? before c) (recur (inc i) c)))))))
+
 ;; most links of a page are written as they're serialized, which one pass
 ;; over them tells
 (defn normal?
@@ -64,22 +86,12 @@
   digits, dots and hyphens that doesn't end in a number, a path, and no
   port or credentials."
   [s]
-  (let [n     (count s)
-        start (cond
+  (let [start (cond
                 (str/starts-with? s "https://") 8
                 (str/starts-with? s "http://")  7)
-        slash (when start
-                (loop [i start]
-                  (when (< i n)
-                    (let [c (chars/code-at s i)]
-                      (cond
-                        (host-code? c) (recur (inc i))
-                        (== 0x2F c)    i)))))]
+        slash (some->> start (host-slash s))]
     (boolean
      (and slash
           (< start slash)
           (not (hosts/ends-in-a-number? (subs s start slash)))
-          (loop [i (inc slash) before 0x2F]
-            (or (== i n)
-                (let [c (chars/code-at s i)]
-                  (and (path-code? before c) (recur (inc i) c)))))))))
+          (normal-path? s (inc slash))))))

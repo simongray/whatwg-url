@@ -71,10 +71,10 @@
   "The insertion that the digits of `cps` from `in` give after the insertion
   `i` with `bias`, as the next index and the new insertion, or nil when
   they run out or overflow."
-  [cps ^long in ^long i ^long bias]
+  [^longs cps ^long in ^long i ^long bias]
   (loop [in in i i w 1 k base]
-    (when (< in (count cps))
-      (let [d (digit-value (nth cps in))]
+    (when (< in (alength cps))
+      (let [d (digit-value (aget cps in))]
         (when (and (< d base) (<= d (quot (- max-int i) w)))
           (let [i (+ i (* d w))
                 t (threshold k bias)]
@@ -85,7 +85,44 @@
                                                      (* w (- base t))
                                                      (+ k base)))))))))
 
-;; RFC 3492, section 6.2
+(defn- last-delimiter
+  "The index of the last hyphen of the code points `cps`, or 0 when there's
+  none."
+  ^long [^longs cps]
+  (loop [k (dec (alength cps))]
+    (cond
+      (neg? k)               0
+      (== 0x2D (aget cps k)) k
+      :else                  (recur (dec k)))))
+
+(defn- basic?
+  "Whether the first `n` of the code points `cps` are basic, i.e. ASCII."
+  [^longs cps ^long n]
+  (loop [k 0]
+    (or (== k n)
+        (and (< (aget cps k) 0x80) (recur (inc k))))))
+
+(defn- insert!
+  "The array `out` of `size` code points with the code point `c` inserted
+  at `i`, after the code points from `i` move one place on."
+  [^longs out ^long size ^long i ^long c]
+  (loop [k size]
+    (when (< i k)
+      (aset out k (aget out (dec k)))
+      (recur (dec k))))
+  (aset out i c)
+  out)
+
+(defn- text-of
+  "The text of the first `n` of the code points `cps`."
+  [^longs cps ^long n]
+  (let [b (chars/builder)]
+    (dotimes [k n]
+      (chars/append-code-point! b (aget cps k)))
+    (str b)))
+
+;; RFC 3492, section 6.2, with each code point inserted into one array of
+;; primitive numbers, rather than into a new vector for each
 (defn decode
   "The Unicode text of the Punycode `s`, without its xn--, or nil when it
   isn't Punycode.
@@ -93,27 +130,30 @@
       (decode \"fa-hia\")
       ;; => \"faß\""
   [s]
-  (let [cps   (chars/code-points s)
-        delim (long (or (last (keep-indexed #(when (== 0x2D (long %2)) %1) cps)) 0))
-        basic (subvec cps 0 delim)]
-    (when (every? #(< (long %) 0x80) basic)
-      (loop [out  basic
+  (let [cps   (long-array (chars/code-points s))
+        delim (last-delimiter cps)
+        ;; each code point that comes out takes one or more that go in
+        out   (long-array (alength cps))]
+    (when (basic? cps delim)
+      (dotimes [k delim]
+        (aset out k (aget cps k)))
+      (loop [size delim
              in   (if (pos? delim) (inc delim) 0)
              n    initial-n
              i    0
              bias initial-bias]
-        (if (< in (count cps))
+        (if (< in (alength cps))
           (when-let [[in' i'] (insertion cps in i bias)]
             (let [in'  (long in')
                   i'   (long i')
-                  len  (inc (count out))
+                  len  (inc size)
                   bias (adapt (- i' i) len (zero? i))
                   n    (+ n (quot i' len))
                   i    (rem i' len)]
               (when (and (<= n 0x10FFFF) (not (chars/surrogate? n)))
-                (recur (into (conj (subvec out 0 i) n) (subvec out i))
-                       in' n (inc i) bias))))
-          (chars/from-code-points out))))))
+                (insert! out size i n)
+                (recur len in' n (inc i) bias))))
+          (text-of out size))))))
 
 (defn- encode-delta
   "The text builder `out` with the digits of the `delta` of a code point

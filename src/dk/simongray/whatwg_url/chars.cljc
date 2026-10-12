@@ -7,8 +7,8 @@
   #?(:cljs (:require-macros [dk.simongray.whatwg-url.chars :refer [defscan]]))
   #?(:clj (:import [java.util Locale])))
 
-;; for a test of ASCII, which no surrogate is, a code unit at a time finds
-;; what a code point at a time would
+;; for a test that no surrogate passes, e.g. one of ASCII, a code unit at a
+;; time finds what a code point at a time would
 #?(:clj
    (defmacro defscan
      "Define the private function `name`, documented by `doc`, of a text
@@ -213,6 +213,22 @@
                     (bit-or 0x80 (bit-and (bit-shift-right c 6) 0x3F))
                     (bit-or 0x80 (bit-and c 0x3F))]))
 
+;; Encoding Standard, 9.1.1, the UTF-8 decoder's steps for a byte that
+;; starts a sequence
+(defn- utf-8-lead
+  "The bits of the code point that the byte `x` starts, how many bytes
+  follow it and the bounds of the first of those, as a vector, or nil when
+  `x` starts no sequence of more than one byte."
+  [^long x]
+  (cond
+    (<= 0xC2 x 0xDF) [(bit-and x 0x1F) 1 0x80 0xBF]
+    (<= 0xE0 x 0xEF) [(bit-and x 0xF) 2
+                      (if (== x 0xE0) 0xA0 0x80)
+                      (if (== x 0xED) 0x9F 0xBF)]
+    (<= 0xF0 x 0xF4) [(bit-and x 0x7) 3
+                      (if (== x 0xF0) 0x90 0x80)
+                      (if (== x 0xF4) 0x8F 0xBF)]))
+
 ;; Encoding Standard, 9.1.1, the UTF-8 decoder
 (defn utf-8-decode
   "The text of the UTF-8 `bytes`, with U+FFFD for each invalid sequence,
@@ -232,22 +248,11 @@
             (do (append-code-point! b x)
                 (recur more 0 0 0 0x80 0xBF))
 
-            (and (zero? needed) (<= 0xC2 x 0xDF))
-            (recur more (bit-and x 0x1F) 0 1 0x80 0xBF)
-
-            (and (zero? needed) (<= 0xE0 x 0xEF))
-            (recur more (bit-and x 0xF) 0 2
-                   (if (== x 0xE0) 0xA0 0x80)
-                   (if (== x 0xED) 0x9F 0xBF))
-
-            (and (zero? needed) (<= 0xF0 x 0xF4))
-            (recur more (bit-and x 0x7) 0 3
-                   (if (== x 0xF0) 0x90 0x80)
-                   (if (== x 0xF4) 0x8F 0xBF))
-
             (zero? needed)
-            (do (append-code-point! b 0xFFFD)
-                (recur more 0 0 0 0x80 0xBF))
+            (if-let [[cp needed lower upper] (utf-8-lead x)]
+              (recur more (long cp) 0 (long needed) (long lower) (long upper))
+              (do (append-code-point! b 0xFFFD)
+                  (recur more 0 0 0 0x80 0xBF)))
 
             ;; the byte starts over, after the replacement of what came before
             (not (<= lower x upper))

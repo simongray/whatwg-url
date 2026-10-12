@@ -37,13 +37,10 @@
   "The special schemes, each with its default port, or nil."
   {"ftp" 21 "file" nil "http" 80 "https" 443 "ws" 80 "wss" 443})
 
-;; a case of constants, which is quicker than a lookup in default-ports
 (defn special?
   "Whether the `scheme` is special."
   [scheme]
-  (case scheme
-    ("ftp" "file" "http" "https" "ws" "wss") true
-    false))
+  (contains? default-ports scheme))
 
 (defn put
   "The `url` with its key `k` set to `v`, or without it when `v` is nil,
@@ -94,7 +91,9 @@
   [special ^long x]
   (or (== x -1) (== x 0x3F) (== x 0x23) (slash? special x)))
 
-;; two assocs, since an assoc of more keys than one walks a seq of them
+;; two assocs rather than one of two keys, since ClojureScript packs the
+;; rest arguments of each such call into a seq, which slows a parse there
+;; by a fifth
 (defn- go
   "The `parse` in the `state` at `i`."
   [parse state i]
@@ -562,7 +561,7 @@
   "The kind of dot segment that the path `segment` is, :single, e.g. . or
   %2e, or :double, e.g. .. or %2e%2e, or nil for another segment."
   [segment]
-  (when (and (let [n (chars/length segment)] (and (<= 1 n) (<= n 6)))
+  (when (and (<= 1 (count segment) 6)
              (let [x (chars/code-at segment 0)] (or (== x 0x2E) (== x 0x25))))
     (case (chars/lower-case segment)
       ("." "%2e")                   :single

@@ -61,29 +61,37 @@
           (recur (+ i (chars/width c))))))
     (str b)))
 
+(defn- virama-at?
+  "Whether the code points `cps` have a virama at `i`."
+  [cps i]
+  (and (<= 0 i) (unicode/virama? (nth cps i))))
+
+(defn- joins?
+  "Whether the first code point of the code points `cps` from `i` on in the
+  direction `step` (1 or -1), past those of the joining type T, has a
+  joining type of `types`."
+  [cps i step types]
+  (loop [i i]
+    (when (< -1 i (count cps))
+      (let [t (unicode/joining-type (nth cps i))]
+        (cond
+          (= :T t)  (recur (+ i step))
+          (types t) true
+          :else     false)))))
+
 ;; RFC 5892, appendix A.1 and A.2
 (defn- joiners-ok?
   "Whether each U+200C and U+200D of the code points `cps` of a label is
   allowed by the CONTEXTJ rules."
   [cps]
-  (let [n        (count cps)
-        virama?  #(and (<= 0 %) (unicode/virama? (nth cps %)))
-        joins    (fn [i step types]
-                   (loop [i i]
-                     (when (< -1 i n)
-                       (let [t (unicode/joining-type (nth cps i))]
-                         (cond
-                           (= :T t)     (recur (+ i step))
-                           (types t)    true
-                           :else        false)))))]
-    (every? (fn [i]
-              (case (long (nth cps i))
-                0x200C (or (virama? (dec i))
-                           (and (joins (dec i) -1 #{:L :D})
-                                (joins (inc i) 1 #{:R :D})))
-                0x200D (virama? (dec i))
-                true))
-            (range n))))
+  (every? (fn [i]
+            (case (long (nth cps i))
+              0x200C (or (virama-at? cps (dec i))
+                         (and (joins? cps (dec i) -1 #{:L :D})
+                              (joins? cps (inc i) 1 #{:R :D})))
+              0x200D (virama-at? cps (dec i))
+              true))
+          (range (count cps))))
 
 ;; RFC 5893, section 2
 (defn- bidi-ok?
@@ -100,33 +108,62 @@
                     (#{:L :EN} end))
       false)))
 
+(chars/defscan joiner-at
+  "The index in the text `s` from `i` of its first U+200C or U+200D, or
+  its end."
+  [s i] [x] (or (== 0x200C x) (== 0x200D x)))
+
+;; the table maps no ASCII but A to Z, so ASCII needs no lookup in it
+(defn- valid-code-point?
+  "Whether the code point `c` may be in a label by the IDNA mapping table,
+  with the deviations valid unless `transitional?`, and by the STD3 rules
+  when `std3?`."
+  [^long c transitional? std3?]
+  (if (< c 0x80)
+    (and (not (and (<= 0x41 c) (<= c 0x5A)))
+         (or (not std3?)
+             (== 0x2D c)
+             (chars/ascii-digit? c)
+             (and (<= 0x61 c) (<= c 0x7A))))
+    (let [[status] (unicode/idna-status c)]
+      (or (= :valid status) (and (= :deviation status) (not transitional?))))))
+
+;; a loop over the text rather than a vector of its code points
+(defn- valid-code-points?
+  "Whether valid-code-point? takes each code point of the `label`, with
+  `transitional?` and `std3?`."
+  [label transitional? std3?]
+  (let [n (chars/length label)]
+    (loop [i 0]
+      (or (== i n)
+          (let [c (chars/code-point-at label i)]
+            (and (valid-code-point? c transitional? std3?)
+                 (recur (+ i (chars/width c)))))))))
+
 ;; UTS #46, section 4.1, all but the bidi rule, which takes the whole domain
 (defn- valid-label?
   "Whether the non-empty `label` meets the validity criteria with `opts`,
   for a label that was decoded from Punycode when `decoded?`."
   [label decoded? {:keys [check-hyphens? check-joiners? use-std3-ascii-rules?
                           transitional?]}]
-  (let [cps (chars/code-points label)]
-    (and (or (not decoded?)
-             (and (unicode/known? label) (= label (unicode/nfc label))))
-         (if check-hyphens?
+  (and (or (not decoded?)
+           (and (unicode/known? label) (= label (unicode/nfc label))))
+       (if check-hyphens?
+         ;; the third and fourth code points, which needn't be the third
+         ;; and fourth code units
+         (let [cps (chars/code-points label)]
            (not (or (and (<= 4 (count cps)) (= [0x2D 0x2D] (subvec cps 2 4)))
-                    (== 0x2D (first cps))
-                    (== 0x2D (peek cps))))
-           (not (str/starts-with? label "xn--")))
-         (not (str/includes? label "."))
-         (not (unicode/mark? (first cps)))
-         (every? (fn [c]
-                   (let [[status] (unicode/idna-status c)]
-                     (and (or (= :valid status)
-                              (and (= :deviation status) (not transitional?)))
-                          (or (not use-std3-ascii-rules?)
-                              (< 0x7F c)
-                              (== 0x2D c)
-                              (chars/ascii-digit? c)
-                              (<= 0x61 c 0x7A)))))
-                 cps)
-         (or (not check-joiners?) (joiners-ok? cps)))))
+                    (str/starts-with? label "-")
+                    (str/ends-with? label "-"))))
+         (not (str/starts-with? label "xn--")))
+       (not (str/includes? label "."))
+       (not (unicode/mark? (chars/code-point-at label 0)))
+       (valid-code-points? label transitional? use-std3-ascii-rules?)
+       (or (not check-joiners?)
+           ;; most labels have no joiner, which one quick look at each code
+           ;; unit tells
+           (== (chars/length label) (joiner-at label 0))
+           (joiners-ok? (chars/code-points label)))))
 
 ;; UTS #46, section 4, step 4
 (defn- converted
@@ -161,6 +198,14 @@
              (or (and (<= 0x80 c) (contains? #{:R :AL :AN} (unicode/bidi-class c)))
                  (recur (+ i (chars/width c)))))))))
 
+;; UTS #46, section 4.1, the bidi rule over the whole domain
+(defn- bidi-rule-ok?
+  "Whether the `labels` of the `domain` meet the bidi rule, which only a
+  domain with a right-to-left code point has to."
+  [labels domain]
+  (or (not (bidi-domain? domain))
+      (every? #(or (= "" %) (bidi-ok? (chars/code-points %))) labels)))
+
 ;; UTS #46, section 4
 (defn process
   "The Unicode `domain` mapped, normalized and converted by the processing
@@ -180,10 +225,7 @@
      {:domain domain
       :error? (not (and known?
                         (every? second results)
-                        (or (not check-bidi?)
-                            (not (bidi-domain? domain))
-                            (every? #(or (= "" %) (bidi-ok? (chars/code-points %)))
-                                    labels))))})))
+                        (or (not check-bidi?) (bidi-rule-ok? labels domain))))})))
 
 (defn- dns-length-ok?
   "Whether the ASCII `labels` of a domain are each 1 to 63 long and are 1
