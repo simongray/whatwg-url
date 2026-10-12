@@ -18,7 +18,7 @@ for f in urltestdata.json urltestdata-javascript-only.json setters_tests.json \
     "https://raw.githubusercontent.com/web-platform-tests/wpt/$wpt/url/resources/$f"
 done
 
-for f in idna/IdnaMappingTable.txt idna/IdnaTestV2.txt \
+for f in idna/IdnaMappingTable.txt idna/IdnaTestV2.txt ucd/UnicodeData.txt \
          ucd/extracted/DerivedBidiClass.txt ucd/extracted/DerivedJoiningType.txt \
          ucd/extracted/DerivedGeneralCategory.txt ucd/extracted/DerivedCombiningClass.txt; do
   curl -sSfL -o "dev-resources/unicode/$(basename "$f")" \

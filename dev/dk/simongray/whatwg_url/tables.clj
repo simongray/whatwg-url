@@ -81,6 +81,26 @@
          [c v])
        (sort-by first)))
 
+(defn canonical-decomposition
+  "The code points of the decomposition field `d` of UnicodeData.txt, or
+  nil when it's empty or not canonical."
+  [d]
+  (when-not (or (str/blank? d) (str/starts-with? d "<"))
+    (map #(Long/parseLong % 16) (str/split d #" "))))
+
+(defn non-inert-values
+  "Each code point of UnicodeData.txt that NFC doesn't leave alone, in
+  order: one with a canonical combining class other than 0, a canonical
+  decomposition, or a place in one. The rest are inert, as ICU has it.
+  Hangul is left out, since its NFC is computed rather than listed."
+  []
+  (let [rows  (data-lines "UnicodeData.txt")
+        parts (set (mapcat #(canonical-decomposition (nth % 5)) rows))]
+    (for [[c _ _ ccc _ d] rows
+          :let            [c (Long/parseLong c 16)]
+          :when           (or (not= "0" ccc) (canonical-decomposition d) (parts c))]
+      [c true])))
+
 (defn runs
   "The runs of consecutive code points with the same value in `values`, as
   triples of the first code point, the last and the value."
@@ -122,7 +142,9 @@
                                                       #(contains? #{"Mn" "Mc" "Me"} %)))
                 "virama.txt"  (table "DerivedCombiningClass.txt, 9"
                                      (property-values "DerivedCombiningClass.txt"
-                                                      #(= "9" %)))}]
+                                                      #(= "9" %)))
+                "nfc.txt"     (table "UnicodeData.txt, the code points that NFC doesn't leave alone"
+                                     (non-inert-values))}]
     (doseq [[name text] tables]
       (spit (io/file target-dir name) (str text "\n"))
       (println name (count text) "characters"))))

@@ -217,11 +217,12 @@ has `to-ascii` and `to-unicode` with each flag of UTS #46, and
 The library carries only the tables that the platforms lack or have from
 an older version of Unicode, e.g. neither has UTS #46. The normalization
 to NFC is the platform's, i.e. that of the JDK or of the JavaScript
-engine, which may have an older version of Unicode too. Since
-NFC never changes for the characters that a version has, the result is
-that of Unicode 18.0.0, unless the domain has a character the platform
-doesn't know. Such a domain is refused rather than converted wrongly, so
-on an older platform a domain with very new characters doesn't parse.
+engine, which may have an older version of Unicode too. NFC never
+changes for the characters that a version has, and it leaves most new
+characters alone, e.g. a new emoji, so the result is that of Unicode
+18.0.0. The exception is a new character that NFC doesn't leave alone,
+e.g. a combining mark of a new script, on a platform that doesn't know
+it. Such a domain is refused rather than converted wrongly.
 
 Other URL libraries
 -------------------

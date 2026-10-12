@@ -75,6 +75,15 @@
              (idna/to-ascii source (assoc strict :transitional? true)))
           "toAsciiT"))))
 
+;; UTS #46, section 4, step 2, by the platform's NFC
+(deftest the-nfc-of-the-platform
+  (testing "a code point that NFC leaves alone, even where the platform's Unicode lacks it, e.g. U+18E00 of Unicode 18"
+    (is (unicode/inert? 0x18E00))
+    (is (unicode/known? "𘸀"))
+    (is (= "xn--pc7f" (idna/to-ascii "𘸀"))))
+  (testing "code points that NFC doesn't leave alone: a mark, a letter of a decomposition, and Hangul"
+    (is (not-any? unicode/inert? [0x0301 0x0041 0x05C8 0x1100 0xAC00]))))
+
 ;; UTS #46, section 4, with each flag on its own, against the defaults of
 ;; the URL Standard
 (deftest the-flags

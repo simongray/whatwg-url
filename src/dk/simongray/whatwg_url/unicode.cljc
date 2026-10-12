@@ -7,9 +7,14 @@
   from the Unicode Character Database, and are read on first use.
 
   The platform normalizes to NFC, by the version of Unicode it has. NFC
-  doesn't change for the code points a version has, so it's the NFC of
-  Unicode 18.0.0 unless the text has a code point the platform doesn't
-  have, which known? tells."
+  doesn't change for the code points a version has, and it leaves most
+  new ones alone, e.g. a new emoji, so it's the NFC of Unicode 18.0.0
+  unless the text has a code point that the platform doesn't have and NFC
+  doesn't leave alone, which known? tells.
+
+  TODO: carry the NFC of Unicode 18.0.0 instead, if domains with such code
+  points turn up, e.g. with a combining mark of a new script. Then no
+  platform would refuse them."
   #?(:cljs (:require-macros [dk.simongray.whatwg-url.unicode :refer [table-text]]))
   (:require [clojure.string :as str]
             #?(:clj [clojure.java.io :as io])
@@ -133,23 +138,42 @@
   [c]
   (some? (lookup @virama-table c)))
 
+(def nfc-table
+  "The code points that NFC doesn't leave alone, read on first use."
+  (delay (read-table (table-text "nfc.txt") (constantly true))))
+
+;; Unicode, section 3.12, for Hangul, which UnicodeData.txt doesn't list
+(defn inert?
+  "Whether NFC leaves the code point `c` alone in any text, as ICU has it:
+  its canonical combining class is 0, and it has no canonical
+  decomposition and no place in one."
+  [^long c]
+  (not (or (lookup @nfc-table c)
+           (<= 0x1100 c 0x1112)
+           (<= 0x1161 c 0x1175)
+           (<= 0x11A8 c 0x11C2)
+           (<= 0xAC00 c 0xD7A3))))
+
 #?(:cljs
    (def unassigned
      "The code points that the JavaScript engine doesn't have."
      (js/RegExp. "\\p{Cn}" "u")))
 
+(defn- defined?
+  "Whether the platform's Unicode has the code point `c`."
+  [c]
+  #?(:clj  (Character/isDefined (int c))
+     :cljs (not (.test unassigned (js/String.fromCodePoint c)))))
+
 (defn known?
-  "Whether the platform's Unicode has each code point of the text `s`,
-  leaving out those that the IDNA table disallows, which make a domain
-  fail anyway."
+  "Whether the platform's NFC gives the NFC of Unicode 18.0.0 for the text
+  `s`: whether its Unicode has each code point that isn't inert, leaving
+  out those that the IDNA table disallows, which make a domain fail
+  anyway."
   [s]
-  #?(:clj  (every? #(or (Character/isDefined (int %))
-                        (= [:disallowed] (idna-status %)))
-                   (chars/code-points s))
-     :cljs (or (not (.test unassigned s))
-               (every? #(or (not (.test unassigned (js/String.fromCodePoint %)))
-                            (= [:disallowed] (idna-status %)))
-                       (chars/code-points s)))))
+  (or #?(:cljs (not (.test unassigned s)))
+      (every? #(or (defined? %) (inert? %) (= [:disallowed] (idna-status %)))
+              (chars/code-points s))))
 
 (defn nfc
   "The text `s` in Unicode Normalization Form C, by the platform."
