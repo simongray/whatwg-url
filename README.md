@@ -298,9 +298,13 @@ which Git ignores, at the versions that the library follows. Without
 them, the tests of their data check nothing.
 
 The public namespaces are the root, `params`, `hosts`, `percent`, `idna`
-and `punycode`. The others are internal: `parser` is the state machine of
-the parser, `unicode` reads the tables, and `chars` has the code points
-and UTF-8.
+and `punycode`. The others are internal:
+
+- `parser`, the state machine of the parser
+- `serializer`, which writes a URL as text
+- `setters`, the setters of the URL class
+- `unicode`, which reads the tables
+- `chars`, the code points and UTF-8
 
 License
 -------

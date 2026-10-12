@@ -734,3 +734,37 @@
       (case (:state parse)
         (:done :failure) parse
         (recur ((states (:state parse)) parse))))))
+
+(defn parse
+  "The URL that the text `s` writes, resolved against the URL map `base`,
+  or nil when it doesn't parse."
+  [s base]
+  (let [{:keys [state url]} (run (str s) {:base base})]
+    (when (= :done state)
+      url)))
+
+(defn base-url
+  "The URL `base` to resolve against, parsed when it's text, nil when
+  there's none, or ::invalid when it doesn't parse."
+  [base]
+  (cond
+    (nil? base) nil
+    (map? base) base
+    :else       (or (parse base nil) ::invalid)))
+
+(defn report
+  "The parse of the text `s` against the URL `base` with its validation
+  errors, or nil when the base doesn't parse."
+  [s base]
+  (let [base (base-url base)]
+    (when-not (= ::invalid base)
+      (run (str s) {:base base :errors? true}))))
+
+;; a map of at most eight keys keeps them in the order they're added
+(defn in-order
+  "The URL map `url` with its parts in the order they're written in."
+  [url]
+  (persistent!
+   (reduce (fn [m k] (if-some [v (get url k)] (assoc! m k v) m))
+           (transient (array-map))
+           [:scheme :username :password :host :port :path :query :fragment])))
